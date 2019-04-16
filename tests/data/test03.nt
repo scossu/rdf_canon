@@ -1,0 +1,4 @@
+<http://example.com/book45> <http://example.com/title> "Jöhn Smith Åutobiography" .
+<http://example.com/book45> <http://example.com/subject> _:blank .	
+_:blank <http://example.com/wrote> <http://example.com/book45> .
+_:blank <http:/example.com/name> "John Smith" . 

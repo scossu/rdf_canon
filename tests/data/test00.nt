@@ -1,0 +1,4 @@
+<http://www.w3.org/2001/sw/RDFCore/ntriples/> <http://xmlns.com/foaf/0.1/maker> _:art .
+<http://www.w3.org/2001/sw/RDFCore/ntriples/> <http://xmlns.com/foaf/0.1/maker> _:dave .
+_:art <http://xmlns.com/foaf/0.1/name> "Art Barstow".
+_:dave <http://xmlns.com/foaf/0.1/name> "Dave Beckett".
