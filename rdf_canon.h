@@ -1,8 +1,7 @@
 #ifndef _RDF_CANON_H
 #define _RDF_CANON_H
 
-#include "raptor2.h"
-
+#include <redland.h>
 
 /* * * CONSTANTS * * */
 
@@ -47,6 +46,13 @@ typedef struct CAN_Buffer {
     unsigned char* addr;
     size_t sz;
 } CAN_Buffer;
+
+//static void print_triple(void* user_data, raptor_statement* triple);
+
+
+/* * * FUNCTION PROTOTYPES * * */
+
+int CAN_canonicize(const unsigned char const * graph, CAN_Buffer* buf);
 
 #endif /* _RDF_CANON_H */
 

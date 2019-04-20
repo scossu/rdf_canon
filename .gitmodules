@@ -4,3 +4,6 @@
 [submodule "ext/librdf"]
 	path = ext/librdf
 	url = https://github.com/dajobe/librdf.git
+[submodule "ext/rasqal"]
+	path = ext/rasqal
+	url = https://github.com/dajobe/rasqal.git

@@ -1,10 +1,13 @@
 #include <stdio.h>
+#include <ctype.h>
+#include <string.h>
+#include <stdarg.h>
 #include <stdlib.h>
 
 #include <redland.h>
+#include "./rdf_canon.h"
 
-int CAN_canonicize(const unsigned char* graph, CAN_Buffer* buf)
-{
+int main(int argc, char* argv[]) {
     librdf_world* world;
     librdf_storage *storage;
     librdf_model* model;
@@ -12,16 +15,27 @@ int CAN_canonicize(const unsigned char* graph, CAN_Buffer* buf)
     librdf_stream* stream;
     librdf_statement *stmt, *q_stmt;
     librdf_node* subject;
-    CAN_Buffer* buf;
+    unsigned char *string, *subj_buf;
     size_t subj_buf_sz, subj_buf_sz2;
 
 
     librdf_world_open(world=librdf_new_world());
 
-    model=librdf_new_model(world, storage=librdf_new_storage(world, "memory", null, null), null);
+    model=librdf_new_model(world, storage=librdf_new_storage(world, "memory", NULL, NULL), NULL);
 
     uri=librdf_new_uri_from_filename(world, argv[1]);
-    librdf_model_load(model, uri, null, null, null);
+    librdf_model_load(model, uri, NULL, NULL, NULL);
+
+    string=librdf_model_to_string(model, uri, "ntriples", NULL, NULL);
+    if(!string) {
+        printf("Failed to serialize model\n");
+        exit(1);
+    }
+
+    printf("Made a %d byte string\n", (int)strlen((char*)string));
+    printf("RDF: %s\n", string);
+    free(string);
+
     librdf_free_uri(uri);
 
     q_stmt = librdf_new_statement(world);
@@ -35,23 +49,23 @@ int CAN_canonicize(const unsigned char* graph, CAN_Buffer* buf)
 
         stmt = librdf_stream_get_object(stream);
         if(!stmt) {
-            fprintf(stderr, "librdf_stream_get_statement returned null\n");
+            fprintf(stderr, "librdf_stream_get_statement returned NULL\n");
             break;
         }
-        fputs("matched statement: ", stdout);
+        fputs("Matched statement: ", stdout);
         librdf_statement_print(stmt, stdout);
         fputc('\n', stdout);
-        fputs("matched subject: ", stdout);
+        fputs("Matched subject: ", stdout);
         subject = librdf_statement_get_subject(stmt);
         librdf_node_print(subject, stdout);
         fputc('\n', stdout);
 
-        subj_buf_sz = librdf_node_encode(subject, null, 0);
+        subj_buf_sz = librdf_node_encode(subject, NULL, 0);
         subj_buf = malloc(subj_buf_sz);
 
-        printf("subject length: %d\n", subj_buf_sz);
+        printf("Subject length: %d\n", subj_buf_sz);
         librdf_node_encode(subject, subj_buf, subj_buf_sz);
-        printf("subject (%d):", subj_buf_sz);
+        printf("Subject (%d):", subj_buf_sz);
         fwrite(subj_buf, 1, subj_buf_sz, stdout);
         fputc('\n', stdout);
 
@@ -66,10 +80,9 @@ int CAN_canonicize(const unsigned char* graph, CAN_Buffer* buf)
 
     librdf_free_world(world);
 
-    return(0);
-
-#ifdef librdf_memory_debug
+#ifdef LIBRDF_MEMORY_DEBUG
   librdf_memory_report(stderr);
 #endif
     return(0);
 }
+
