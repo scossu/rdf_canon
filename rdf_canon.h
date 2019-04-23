@@ -5,35 +5,35 @@
 
 /* * * CONSTANTS * * */
 
-/* Start of subject block.*/
-#define CAN_S_START "{"
+/* Start of subject block ("{").*/
+#define CAN_S_START 123
 
-/* End of subject block.*/
-#define CAN_S_END "}"
+/* End of subject block ("}").*/
+#define CAN_S_END 125
 
-/* Start of predicate block.*/
-#define CAN_P_START "("
+/* Start of predicate block ("(").*/
+#define CAN_P_START 40
 
-/* End of predicate block.*/
-#define CAN_P_END ")"
+/* End of predicate block (")").*/
+#define CAN_P_END 41
 
-/* Start of object block.*/
-#define CAN_O_START "["
+/* Start of object block ("[").*/
+#define CAN_O_START 91
 
-/* End of object block.*/
-#define CAN_O_END "]"
+/* End of object block ("]").*/
+#define CAN_O_END 93
 
-/* Blank node symbol.*/
-#define CAN_BNODE "*"
+/* Blank node symbol ("*").*/
+#define CAN_BNODE 42
 
-/** Original subject node.
+/** Original subject node ("!").
  *
  * This is an addition to the original logic to address an edge case brought up
  * by prof. Miguel Ceriani with self-referential blank nodes.
  */
-#define CAN_ORIG_S "!"
+#define CAN_ORIG_S 33
 
-#define CAN_EMPTY ""
+#define CAN_EMPTY 0
 
 
 /* * * TYPEDEFS * * */

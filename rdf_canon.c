@@ -1,64 +1,59 @@
 #include <stdio.h>
 #include <stdlib.h>
 
+#include <libcork/ds.h>
 #include <redland.h>
 
-int CAN_canonicize(const unsigned char* graph, CAN_Buffer* buf)
+int CAN_canonicize(librdf_world* world, librdf_model* graph, cork_buffer* buf)
 {
-    librdf_world* world;
-    librdf_storage *storage;
-    librdf_model* model;
-    librdf_uri* uri;
+    cork_hash_table* subjects;
     librdf_stream* stream;
     librdf_statement *stmt, *q_stmt;
     librdf_node* subject;
-    CAN_Buffer* buf;
-    size_t subj_buf_sz, subj_buf_sz2;
-
-
-    librdf_world_open(world=librdf_new_world());
-
-    model=librdf_new_model(world, storage=librdf_new_storage(world, "memory", null, null), null);
-
-    uri=librdf_new_uri_from_filename(world, argv[1]);
-    librdf_model_load(model, uri, null, null, null);
-    librdf_free_uri(uri);
+    cork_buffer* subj_buf = cork_buffer_new();
 
     q_stmt = librdf_new_statement(world);
-    stream = librdf_model_find_statements(model, q_stmt);
+    stream = librdf_model_find_statements(graph, q_stmt);
     if(!stream)  {
         fprintf(stderr, "librdf_model_get_targets failed to return iterator for searching\n");
-      return(1);
+        return(1);
     }
+    /* Must be preallocated. */
+    cork_buffer_init(buf);
+
     while(!librdf_stream_end(stream)) {
-        librdf_node *target;
+        /* Original subject that gets passed down recursive calls. */
+        librdf_node orig_subj;
 
         stmt = librdf_stream_get_object(stream);
         if(!stmt) {
             fprintf(stderr, "librdf_stream_get_statement returned null\n");
             break;
         }
+        /*
         fputs("matched statement: ", stdout);
         librdf_statement_print(stmt, stdout);
         fputc('\n', stdout);
-        fputs("matched subject: ", stdout);
+        */
         subject = librdf_statement_get_subject(stmt);
+        fputs("matched subject: ", stdout);
         librdf_node_print(subject, stdout);
         fputc('\n', stdout);
 
-        subj_buf_sz = librdf_node_encode(subject, null, 0);
-        subj_buf = malloc(subj_buf_sz);
+        subj_buf_sz = librdf_node_encode(subject, NULL, 0);
+        cork_buffer_ensure_size(subj_buf, subj_buf_sz)
 
-        printf("subject length: %d\n", subj_buf_sz);
-        librdf_node_encode(subject, subj_buf, subj_buf_sz);
+        /*printf("subject length: %d\n", subj_buf_sz);*/
+        librdf_node_encode(subject, subj_buf->buf, subj_buf->size);
         printf("subject (%d):", subj_buf_sz);
         fwrite(subj_buf, 1, subj_buf_sz, stdout);
         fputc('\n', stdout);
 
-        free(subj_buf);
+        cork_buffer_done(subj_buf);
 
         librdf_stream_next(stream);
     }
+    cork_buffer_free(subj_buf);
 
     librdf_free_stream(stream);
     librdf_free_model(model);
