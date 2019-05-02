@@ -50,7 +50,6 @@ int CAN_canonicize(
     cork_array_init(&subjects);
     cork_array(struct cork_buffer*) ser_subjects;
     cork_array_init(&ser_subjects);
-    struct cork_buffer* encoded_subj;
 
     librdf_stream* stream;
     librdf_statement *stmt, *q_stmt;
@@ -58,11 +57,15 @@ int CAN_canonicize(
 
     q_stmt = librdf_new_statement(world);
     stream = librdf_model_find_statements(model, q_stmt);
+    librdf_free_statement(q_stmt);
     if(!stream)  {
         fprintf(stderr, "librdf_model_get_targets failed to return iterator for searching\n");
         return(1);
     }
     cork_buffer_init(buf);
+
+    /* Canonicized subject as a byte buffer. */
+    struct cork_buffer* encoded_subj = cork_buffer_new();
 
     while(!librdf_stream_end(stream)) {
         /* Get the statement (triple) */
@@ -88,8 +91,10 @@ int CAN_canonicize(
 
             struct cork_hash_table* visited_nodes = cork_hash_table_new(0, 0);
 
-            encoded_subj = encode_subject(
-                    model, subject, &orig_subj, visited_nodes);
+            encode_subject(
+                    model, subject, &orig_subj, visited_nodes, encoded_subj);
+
+            cork_hash_table_free(visited_nodes);
             cork_array_append(&subjects, subject);
             cork_array_append(&ser_subjects, encoded_subj);
 
@@ -98,6 +103,9 @@ int CAN_canonicize(
 
         librdf_stream_next(stream);
     }
+
+    librdf_free_statement(stmt);
+    cork_array_done(&subjects);
 
     /* TODO sort subjects. */
 
@@ -109,7 +117,10 @@ int CAN_canonicize(
         cork_buffer_append(buf, CAN_S_END, 1);
     }
 
+    cork_array_done(&ser_subjects);
+
     cork_buffer_free(encoded_subj);
+    printf("Freed encoded subject.\n");
 
     librdf_free_stream(stream);
 
@@ -117,22 +128,23 @@ int CAN_canonicize(
 }
 
 
-struct cork_buffer* encode_subject(librdf_model* model, librdf_node* subject,
-        librdf_node* orig_subj, struct cork_hash_table* visited_nodes)
+int encode_subject(librdf_model* model, librdf_node* subject,
+        librdf_node* orig_subj, struct cork_hash_table* visited_nodes,
+        struct cork_buffer* encoded_subj)
 {
-    /* Canonicized subject as a byte buffer. */
-    unsigned char* can_term_addr = NULL;
-    size_t can_term_size;
-    struct cork_buffer* can_buf = cork_buffer_new();
 
-    can_term_size = librdf_node_encode(subject, NULL, 0);
+    size_t can_term_size = librdf_node_encode(subject, NULL, 0);
+    unsigned char* can_term_addr = malloc(can_term_size);
+    if(can_term_addr == NULL)
+        return(1);
     librdf_node_encode(subject, can_term_addr, can_term_size);
-    printf("Encoded node: %s", (char*)can_term_addr);
-    cork_buffer_append(can_buf, can_term_addr, can_term_size);
+    printf("Encoded node: %s\n", (char*)can_term_addr);
+    cork_buffer_append(encoded_subj, can_term_addr, can_term_size);
 
     printf("subject (%lu):", can_term_size);
     fwrite(can_term_addr, 1, can_term_size, stdout);
     fputc('\n', stdout);
 
-    return(can_buf);
+    free(can_term_addr);
+    return(0);
 }

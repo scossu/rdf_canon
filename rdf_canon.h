@@ -57,7 +57,8 @@ typedef struct CAN_Buffer {
 //struct cork_buffer* CAN_canonicize(librdf_world* world, librdf_model* model);
 int CAN_canonicize(librdf_world* world, librdf_model* model, struct cork_buffer* buf);
 
-struct cork_buffer* encode_subject(librdf_model* model, librdf_node* subject,
-        librdf_node* orig_subj, struct cork_hash_table* visited_nodes);
+int encode_subject(librdf_model* model, librdf_node* subject,
+        librdf_node* orig_subj, struct cork_hash_table* visited_nodes,
+        struct cork_buffer* encoded_subj);
 
 #endif /* _RDF_CANON_H */
