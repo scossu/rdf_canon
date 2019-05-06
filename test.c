@@ -52,6 +52,7 @@ int main(int argc, char* argv[]) {
     printf("Freed storage.\n");
 
     librdf_free_world(world);
+    printf("Freed world.\n");
 
 #ifdef LIBRDF_MEMORY_DEBUG
   librdf_memory_report(stderr);

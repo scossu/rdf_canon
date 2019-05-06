@@ -1,6 +1,7 @@
 #include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <sys/param.h>
 
 #include <libcork/core.h>
 #include <libcork/ds.h>
@@ -12,19 +13,37 @@
 typedef cork_array(librdf_node*) CAN_node_array;
 
 /* An ordered, contiguous array of serialize nodes. */
-typedef cork_array(struct cork_buffer*) CAN_buf_array;
+typedef cork_array(struct cork_buffer*) CAN_buffer_array;
 
 /*
  * From benchmark: https://pastebin.com/azzuk072
  * (Daniel Stutzbach's insertion sort)
  */
-static inline void sort_array(int *d, const unsigned int sz){
+/*
+static inline void sort_terms(cork_array* array){
     int i, j;
     for (i = 1; i < sz; i++) {
         int tmp = d[i];
         for (j = i; j >= 1 && tmp < d[j-1]; j--)
             d[j] = d[j-1];
         d[j] = tmp;
+    }
+}
+*/
+static inline void sort_terms(CAN_buffer_array* array){
+    int i, j;
+
+    for (i = 1; i < cork_array_size(array); i++) {
+        struct cork_buffer* tmp = cork_array_at(array, i);
+        for (
+            j = i;
+            j >= 1 && memcmp(
+                tmp->buf, cork_array_at(array, j - 1)->buf, MAX(tmp->size, cork_array_at(array, j - 1)->size)
+            ) < 0;
+            j--
+        )
+            cork_array_at(array, j) = cork_array_at(array, j - 1);
+        cork_array_at(array, j) = tmp;
     }
 }
 
@@ -48,7 +67,7 @@ int CAN_canonicize(
     /* Initialize a buffer array for the subjects. */
     CAN_node_array subjects;
     cork_array_init(&subjects);
-    cork_array(struct cork_buffer*) ser_subjects;
+    CAN_buffer_array ser_subjects;
     cork_array_init(&ser_subjects);
 
     librdf_stream* stream;
@@ -65,9 +84,14 @@ int CAN_canonicize(
     cork_buffer_init(buf);
 
     /* Canonicized subject as a byte buffer. */
-    struct cork_buffer* encoded_subj = cork_buffer_new();
-
+    //cork_array_ensure_size(&subjects, librdf_model_size(model));
+    struct cork_buffer* encoded_subj = malloc(sizeof(struct cork_buffer) * librdf_model_size(model));
+    size_t i = 0;
     while(!librdf_stream_end(stream)) {
+        //struct cork_buffer* encoded_subj = encoded_subjs + i;
+        cork_buffer_init(encoded_subj + i);
+        printf("i: %lu\n", i);
+
         /* Get the statement (triple) */
         stmt = librdf_stream_get_object(stream);
         if(!stmt) {
@@ -92,35 +116,53 @@ int CAN_canonicize(
             struct cork_hash_table* visited_nodes = cork_hash_table_new(0, 0);
 
             encode_subject(
-                    model, subject, &orig_subj, visited_nodes, encoded_subj);
+                    model, subject, &orig_subj, visited_nodes, (encoded_subj + i));
+
+            printf("Canonicized subject: ");
+            fwrite((encoded_subj + i)->buf, 1, (encoded_subj + i)->size, stdout);
+            fputc('\n', stdout);
 
             cork_hash_table_free(visited_nodes);
             cork_array_append(&subjects, subject);
-            cork_array_append(&ser_subjects, encoded_subj);
+            cork_array_append(&ser_subjects, encoded_subj + i);
 
-            capacity += encoded_subj->size + 2;
+            capacity += (encoded_subj + i)->size + 2;
+        } else {
+            printf("Duplicate subject: ");
+            librdf_node_print(subject, stdout);
+            fputc('\n', stdout);
+            cork_buffer_done(encoded_subj + i);
         }
 
+        i++;
         librdf_stream_next(stream);
     }
 
     librdf_free_statement(stmt);
     cork_array_done(&subjects);
 
-    /* TODO sort subjects. */
+    sort_terms(&ser_subjects);
 
     cork_buffer_ensure_size(buf, capacity);
     size_t subj_size = cork_array_size(&ser_subjects);
-    for(size_t i = 0; i < subj_size; i++){
+    for(i = 0; i < subj_size; i++){
+        //printf("i: %lu\n", i);
+        struct cork_buffer* el = cork_array_at(&ser_subjects, i);
+        printf("Buffer in array: ");
+        fwrite(el->buf, 1, el->size, stdout);
+        fputc('\n', stdout);
         cork_buffer_append(buf, CAN_S_START, 1);
-        cork_buffer_append_copy(buf, cork_array_at(&ser_subjects, i));
+        cork_buffer_append_copy(buf, el);
         cork_buffer_append(buf, CAN_S_END, 1);
+
+        cork_buffer_done(el);
+        el = NULL;
     }
 
+    free(encoded_subj);
+    printf("Freed encoded subjects.\n");
     cork_array_done(&ser_subjects);
-
-    cork_buffer_free(encoded_subj);
-    printf("Freed encoded subject.\n");
+    printf("Freed encoded subjects array.\n");
 
     librdf_free_stream(stream);
 

@@ -174,3 +174,5 @@ Module.symvers
 Mkfile.old
 dkms.conf
 
+# Valgrind files
+vgcore.*
