@@ -34,7 +34,7 @@
  */
 #define CAN_ORIG_S "!"
 
-#define CAN_EMPTY \x00
+#define CAN_EMPTY '\0'
 
 
 /* * * TYPEDEFS * * */
@@ -49,6 +49,12 @@ typedef struct CAN_Buffer {
 /* An ordered, contiguous array of librdf node structs. */
 //typedef cork_array(librdf_node*) CAN_node_array;
 
+/* An ordered, contiguous array of librdf node structs. */
+typedef cork_array(librdf_node*) CAN_node_array;
+
+/* An ordered, contiguous array of serialize nodes. */
+typedef cork_array(struct cork_buffer*) CAN_buffer_array;
+
 //static void print_triple(void* user_data, raptor_statement* triple);
 
 
@@ -58,7 +64,14 @@ typedef struct CAN_Buffer {
 int CAN_canonicize(librdf_world* world, librdf_model* model, struct cork_buffer* buf);
 
 int encode_subject(librdf_model* model, librdf_node* subject,
-        librdf_node* orig_subj, struct cork_hash_table* visited_nodes,
+        librdf_node* orig_subj, CAN_node_array* visited_nodes,
         struct cork_buffer* encoded_subj);
 
+int encode_props(librdf_model* model, librdf_node* subject,
+        CAN_node_array* visited_nodes, struct cork_buffer* encoded_pred);
+
+int encode_object(
+    librdf_model* model, librdf_node* object, CAN_node_array* visited_nodes,
+    struct cork_buffer* obj_buf
+);
 #endif /* _RDF_CANON_H */
