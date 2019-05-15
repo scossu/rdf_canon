@@ -57,21 +57,29 @@ typedef cork_array(struct cork_buffer*) CAN_buffer_array;
 
 //static void print_triple(void* user_data, raptor_statement* triple);
 
+typedef struct CAN_context {
+    librdf_world* world;
+    raptor_world* raptor_world;
+    librdf_model* model;
+    CAN_node_array* visited_nodes;
+    librdf_node* orig_subj;
+} CAN_context;
+
 
 /* * * FUNCTION PROTOTYPES * * */
 
 //struct cork_buffer* CAN_canonicize(librdf_world* world, librdf_model* model);
 int CAN_canonicize(librdf_world* world, librdf_model* model, struct cork_buffer* buf);
 
-int encode_subject(librdf_model* model, librdf_node* subject,
-        librdf_node* orig_subj, CAN_node_array* visited_nodes,
-        struct cork_buffer* encoded_subj);
+int encode_subject(
+    CAN_context* ctx, librdf_node* subject, struct cork_buffer* encoded_subj
+);
 
-int encode_props(librdf_model* model, librdf_node* subject,
-        CAN_node_array* visited_nodes, struct cork_buffer* encoded_pred);
+int encode_preds(
+    CAN_context* ctx, librdf_node* subject, struct cork_buffer* pred_buf
+);
 
 int encode_object(
-    librdf_model* model, librdf_node* object, CAN_node_array* visited_nodes,
-    struct cork_buffer* obj_buf
+    CAN_context* ctx, librdf_node* object, struct cork_buffer* obj_buf
 );
 #endif /* _RDF_CANON_H */
