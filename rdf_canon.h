@@ -39,21 +39,14 @@
 
 /* * * TYPEDEFS * * */
 
-/* Generic byte buffer structure with an address and size. * /
-typedef struct CAN_Buffer {
-    unsigned char* addr;
-    size_t sz;
-} CAN_Buffer;
- */
+/* Resizable byte buffer. */
+typedef struct cork_buffer CAN_Buffer;
 
 /* An ordered, contiguous array of librdf node structs. */
-//typedef cork_array(librdf_node*) CAN_node_array;
-
-/* An ordered, contiguous array of librdf node structs. */
-typedef cork_array(librdf_node*) CAN_node_array;
+typedef cork_array(librdf_node*) CAN_NodeArray;
 
 /* An ordered, contiguous array of serialize nodes. */
-typedef cork_array(struct cork_buffer*) CAN_buffer_array;
+typedef cork_array(CAN_Buffer*) CAN_BufferArray;
 
 //static void print_triple(void* user_data, raptor_statement* triple);
 
@@ -61,29 +54,29 @@ typedef struct CAN_context {
     librdf_world* world;
     raptor_world* raptor_world;
     librdf_model* model;
-    CAN_node_array* visited_nodes;
+    CAN_NodeArray* visited_nodes;
     librdf_node* orig_subj;
 } CAN_context;
 
 
 /* * * FUNCTION PROTOTYPES * * */
 
-//struct cork_buffer* CAN_canonicize(librdf_world* world, librdf_model* model);
-int CAN_canonicize(librdf_world* world, librdf_model* model, struct cork_buffer* buf);
+//CAN_Buffer* CAN_canonicize(librdf_world* world, librdf_model* model);
+int CAN_canonicize(librdf_world* world, librdf_model* model, CAN_Buffer* buf);
 
 int encode_subject(
-    CAN_context* ctx, librdf_node* subject, struct cork_buffer* subj_buf
+    CAN_context* ctx, librdf_node* subject, CAN_Buffer* subj_buf
 );
 
 int encode_preds(
-    CAN_context* ctx, librdf_node* subject, struct cork_buffer* pred_buf
+    CAN_context* ctx, librdf_node* subject, CAN_Buffer* pred_buf
 );
 
 int encode_object(
-    CAN_context* ctx, librdf_node* object, struct cork_buffer* obj_buf
+    CAN_context* ctx, librdf_node* object, CAN_Buffer* obj_buf
 );
 
 int serialize(
-        CAN_context* ctx, librdf_node* node, struct cork_buffer* node_buf);
+        CAN_context* ctx, librdf_node* node, CAN_Buffer* node_buf);
 
 #endif /* _RDF_CANON_H */

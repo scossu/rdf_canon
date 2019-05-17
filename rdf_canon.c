@@ -24,11 +24,11 @@ static inline void sort_terms(cork_array* array){
     }
 }
 */
-static inline void sort_terms(CAN_buffer_array* array){
+static inline void sort_terms(CAN_BufferArray* array){
     int i, j;
 
     for (i = 1; i < cork_array_size(array); i++) {
-        struct cork_buffer* tmp = cork_array_at(array, i);
+        CAN_Buffer* tmp = cork_array_at(array, i);
         for (
             j = i;
             j >= 1 && memcmp(
@@ -41,7 +41,7 @@ static inline void sort_terms(CAN_buffer_array* array){
     }
 }
 
-static bool subj_array_contains(const CAN_node_array* subjects, librdf_node* el)
+static bool subj_array_contains(const CAN_NodeArray* subjects, librdf_node* el)
 {
     size_t i;
     size_t ct = cork_array_size(subjects);
@@ -55,12 +55,12 @@ static bool subj_array_contains(const CAN_node_array* subjects, librdf_node* el)
 
 
 int CAN_canonicize(
-        librdf_world* world, librdf_model* model, struct cork_buffer* buf)
+        librdf_world* world, librdf_model* model, CAN_Buffer* buf)
 {
     CAN_context _ctx;
     CAN_context* ctx = &_ctx;
 
-    CAN_node_array visited_nodes;
+    CAN_NodeArray visited_nodes;
     ctx->visited_nodes = &visited_nodes;
 
     ctx->world = world;
@@ -69,9 +69,9 @@ int CAN_canonicize(
 
     size_t capacity = 0;
     /* Initialize a buffer array for the subjects. */
-    CAN_node_array subjects;
+    CAN_NodeArray subjects;
     cork_array_init(&subjects);
-    CAN_buffer_array ser_subjects;
+    CAN_BufferArray ser_subjects;
     cork_array_init(&ser_subjects);
 
     librdf_stream* stream;
@@ -89,11 +89,11 @@ int CAN_canonicize(
 
     /* Canonicized subject as a byte buffer. */
     //cork_array_ensure_size(&subjects, librdf_model_size(model));
-    struct cork_buffer* subj_buf = malloc(
-            sizeof(struct cork_buffer) * librdf_model_size(ctx->model));
+    CAN_Buffer* subj_buf = malloc(
+            sizeof(CAN_Buffer) * librdf_model_size(ctx->model));
     size_t i = 0;
     while(!librdf_stream_end(stream)) {
-        //struct cork_buffer* subj_buf = encoded_subjs + i;
+        //CAN_Buffer* subj_buf = encoded_subjs + i;
         cork_array_init(ctx->visited_nodes);
         cork_buffer_init(subj_buf + i);
         printf("i: %lu\n", i);
@@ -149,7 +149,7 @@ int CAN_canonicize(
     size_t subj_size = cork_array_size(&ser_subjects);
     for(i = 0; i < subj_size; i++){
         //printf("i: %lu\n", i);
-        struct cork_buffer* el = cork_array_at(&ser_subjects, i);
+        CAN_Buffer* el = cork_array_at(&ser_subjects, i);
         printf("Buffer in array: ");
         fwrite(el->buf, 1, el->size, stdout);
         fputc('\n', stdout);
@@ -174,7 +174,7 @@ int CAN_canonicize(
 
 
 int encode_subject(
-        CAN_context* ctx, librdf_node* subject, struct cork_buffer* subj_buf)
+        CAN_context* ctx, librdf_node* subject, CAN_Buffer* subj_buf)
 {
     if (librdf_node_get_type(subject) == LIBRDF_NODE_TYPE_BLANK) {
         if (subj_array_contains(ctx->visited_nodes, subject)) {
@@ -193,7 +193,7 @@ int encode_subject(
         serialize(ctx, subject, subj_buf);
         printf("Encoded node: %s\n", (char*)subj_buf->buf);
     }
-    struct cork_buffer* pred_buf = cork_buffer_new();
+    CAN_Buffer* pred_buf = cork_buffer_new();
     encode_preds(ctx, subject, pred_buf);
     cork_buffer_append_copy(subj_buf, pred_buf);
 
@@ -204,10 +204,10 @@ int encode_subject(
 
 
 int encode_preds(
-    CAN_context* ctx, librdf_node* subject, struct cork_buffer* pred_buf
+    CAN_context* ctx, librdf_node* subject, CAN_Buffer* pred_buf
 ) {
     librdf_iterator* props_it = librdf_model_get_arcs_out(ctx->model, subject);
-    CAN_node_array props_a;
+    CAN_NodeArray props_a;
     cork_array_init(&props_a);
 
     // Build ordered predicates array.
@@ -220,7 +220,7 @@ int encode_preds(
     // Append serialized perdicates and objects to buffer. 
     for(size_t i = 0; i < cork_array_size(&props_a); i++){
         librdf_node* p = cork_array_at(&props_a, i);
-        CAN_node_array obj_a;
+        CAN_NodeArray obj_a;
         cork_array_init(&obj_a);
 
         // Build ordered array of objects.
@@ -237,7 +237,7 @@ int encode_preds(
 
         // Append serialized objects to object buffer.
         for(size_t j = 0; j < cork_array_size(&obj_a); j++){
-            struct cork_buffer* obj_buf = cork_buffer_new();
+            CAN_Buffer* obj_buf = cork_buffer_new();
 
             encode_object(ctx, cork_array_at(&obj_a, j), obj_buf);
 
@@ -259,7 +259,7 @@ int encode_preds(
 }
 
 int encode_object(
-    CAN_context* ctx, librdf_node* object, struct cork_buffer* obj_buf
+    CAN_context* ctx, librdf_node* object, CAN_Buffer* obj_buf
 ) {
     if (librdf_node_get_type(object) == LIBRDF_NODE_TYPE_BLANK) {
         encode_subject(ctx, object, obj_buf);
@@ -271,7 +271,7 @@ int encode_object(
 }
 
 int serialize(
-        CAN_context* ctx, librdf_node* node, struct cork_buffer* node_buf){
+        CAN_context* ctx, librdf_node* node, CAN_Buffer* node_buf){
     raptor_iostream* iostr = raptor_new_iostream_to_string(
         ctx->raptor_world, &(node_buf->buf), &(node_buf->size), malloc
     );
