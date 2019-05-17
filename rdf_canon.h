@@ -34,7 +34,7 @@
  */
 #define CAN_ORIG_S "!"
 
-#define CAN_EMPTY '\0'
+#define CAN_EMPTY "-"
 
 
 /* * * TYPEDEFS * * */
@@ -72,7 +72,7 @@ typedef struct CAN_context {
 int CAN_canonicize(librdf_world* world, librdf_model* model, struct cork_buffer* buf);
 
 int encode_subject(
-    CAN_context* ctx, librdf_node* subject, struct cork_buffer* encoded_subj
+    CAN_context* ctx, librdf_node* subject, struct cork_buffer* subj_buf
 );
 
 int encode_preds(
@@ -82,4 +82,8 @@ int encode_preds(
 int encode_object(
     CAN_context* ctx, librdf_node* object, struct cork_buffer* obj_buf
 );
+
+int serialize(
+        CAN_context* ctx, librdf_node* node, struct cork_buffer* node_buf);
+
 #endif /* _RDF_CANON_H */

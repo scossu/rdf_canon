@@ -89,12 +89,13 @@ int CAN_canonicize(
 
     /* Canonicized subject as a byte buffer. */
     //cork_array_ensure_size(&subjects, librdf_model_size(model));
-    struct cork_buffer* encoded_subj = malloc(sizeof(struct cork_buffer) * librdf_model_size(ctx->model));
+    struct cork_buffer* subj_buf = malloc(
+            sizeof(struct cork_buffer) * librdf_model_size(ctx->model));
     size_t i = 0;
     while(!librdf_stream_end(stream)) {
-        //struct cork_buffer* encoded_subj = encoded_subjs + i;
+        //struct cork_buffer* subj_buf = encoded_subjs + i;
         cork_array_init(ctx->visited_nodes);
-        cork_buffer_init(encoded_subj + i);
+        cork_buffer_init(subj_buf + i);
         printf("i: %lu\n", i);
 
         /* Get the statement (triple) */
@@ -117,21 +118,21 @@ int CAN_canonicize(
             /* Original subject that gets passed down the call stack. */
             ctx->orig_subj = subject;
 
-            encode_subject(ctx, subject, (encoded_subj + i));
+            encode_subject(ctx, subject, (subj_buf + i));
 
             printf("Canonicized subject: ");
-            fwrite((encoded_subj + i)->buf, 1, (encoded_subj + i)->size, stdout);
+            fwrite((subj_buf + i)->buf, 1, (subj_buf + i)->size, stdout);
             fputc('\n', stdout);
 
             cork_array_append(&subjects, subject);
-            cork_array_append(&ser_subjects, encoded_subj + i);
+            cork_array_append(&ser_subjects, subj_buf + i);
 
-            capacity += (encoded_subj + i)->size + 2;
+            capacity += (subj_buf + i)->size + 2;
         } else {
             printf("Duplicate subject: ");
             librdf_node_print(subject, stdout);
             fputc('\n', stdout);
-            cork_buffer_done(encoded_subj + i);
+            cork_buffer_done(subj_buf + i);
         }
 
         cork_array_done(ctx->visited_nodes);
@@ -160,7 +161,7 @@ int CAN_canonicize(
         el = NULL;
     }
 
-    free(encoded_subj);
+    free(subj_buf);
     printf("Freed encoded subjects.\n");
     cork_array_done(&ser_subjects);
     printf("Freed encoded subjects array.\n");
@@ -173,40 +174,28 @@ int CAN_canonicize(
 
 
 int encode_subject(
-    CAN_context* ctx, librdf_node* subject, struct cork_buffer* encoded_subj
-) {
-
-    size_t can_term_size = librdf_node_encode(subject, NULL, 0);
+        CAN_context* ctx, librdf_node* subject, struct cork_buffer* subj_buf)
+{
     if (librdf_node_get_type(subject) == LIBRDF_NODE_TYPE_BLANK) {
         if (subj_array_contains(ctx->visited_nodes, subject)) {
             if (librdf_node_equals(subject, ctx->orig_subj)) {
-                cork_buffer_set(encoded_subj, CAN_ORIG_S, 1);
+                cork_buffer_set(subj_buf, CAN_ORIG_S, 1);
+
                 return(0);
             } else {
-                cork_buffer_set(encoded_subj, CAN_EMPTY, 1);
+                cork_buffer_clear(subj_buf);
             }
         } else {
             cork_array_append(ctx->visited_nodes, subject);
-            cork_buffer_set(encoded_subj, CAN_BNODE, 1);
+            cork_buffer_set(subj_buf, CAN_BNODE, 1);
         }
     } else {
-        unsigned char* can_term_addr = malloc(can_term_size);
-        if(can_term_addr == NULL)
-            return(1);
-        librdf_node_encode(subject, can_term_addr, can_term_size);
-        printf("Encoded node: %s\n", (char*)can_term_addr);
-        cork_buffer_set(encoded_subj, can_term_addr, can_term_size);
-
-        /*
-        printf("subject (%lu):", can_term_size);
-        fwrite(can_term_addr, 1, can_term_size, stdout);
-        fputc('\n', stdout);
-        */
-        free(can_term_addr);
+        serialize(ctx, subject, subj_buf);
+        printf("Encoded node: %s\n", (char*)subj_buf->buf);
     }
     struct cork_buffer* pred_buf = cork_buffer_new();
     encode_preds(ctx, subject, pred_buf);
-    cork_buffer_append_copy(encoded_subj, pred_buf);
+    cork_buffer_append_copy(subj_buf, pred_buf);
 
     cork_buffer_free(pred_buf);
 
@@ -250,7 +239,7 @@ int encode_preds(
         for(size_t j = 0; j < cork_array_size(&obj_a); j++){
             struct cork_buffer* obj_buf = cork_buffer_new();
 
-            encode_object(ctx, librdf_iterator_get_object(obj_it), obj_buf);
+            encode_object(ctx, cork_array_at(&obj_a, j), obj_buf);
 
             cork_buffer_append(pred_buf, CAN_O_START, 1);
             cork_buffer_append_copy(pred_buf, obj_buf);
@@ -275,12 +264,22 @@ int encode_object(
     if (librdf_node_get_type(object) == LIBRDF_NODE_TYPE_BLANK) {
         encode_subject(ctx, object, obj_buf);
     } else {
-        raptor_iostream* iostr = raptor_new_iostream_to_string(
-            ctx->raptor_world, obj_buf->buf, &obj_buf->size, malloc
-        );
-        librdf_node_write(object, iostr);
-        raptor_free_iostream(iostr);
+        serialize(ctx, object, obj_buf);
     }
+
+    return(0);
+}
+
+int serialize(
+        CAN_context* ctx, librdf_node* node, struct cork_buffer* node_buf){
+    raptor_iostream* iostr = raptor_new_iostream_to_string(
+        ctx->raptor_world, &(node_buf->buf), &(node_buf->size), malloc
+    );
+    int ret = librdf_node_write(node, iostr);
+    printf("node buffer write result: %d\n", ret);
+    printf("node buffer: %s\n", (char*)node_buf->buf);
+    raptor_iostream_write_end(iostr);
+    raptor_free_iostream(iostr);
 
     return(0);
 }
