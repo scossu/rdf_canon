@@ -9,36 +9,35 @@
 
 #include "rdf_canon.h"
 
-/*
- * From benchmark: https://pastebin.com/azzuk072
- * (Daniel Stutzbach's insertion sort)
- */
-/*
-static inline void sort_terms(cork_array* array){
-    int i, j;
-    for (i = 1; i < sz; i++) {
-        int tmp = d[i];
-        for (j = i; j >= 1 && tmp < d[j-1]; j--)
-            d[j] = d[j-1];
-        d[j] = tmp;
-    }
-}
-*/
-static inline void sort_terms(CAN_BufferArray* array){
-    int i, j;
+static inline int array_insert_ordered(
+        CAN_BufferArray* array, const CAN_Buffer* ins_item)
+{
+    unsigned int i, j;
+    int comp;
+    size_t ar_sz = cork_array_size(array);
+    CAN_Buffer* check_item;
 
-    for (i = 1; i < cork_array_size(array); i++) {
-        CAN_Buffer* tmp = cork_array_at(array, i);
-        for (
-            j = i;
-            j >= 1 && memcmp(
-                tmp->buf, cork_array_at(array, j - 1)->buf, MAX(tmp->size, cork_array_at(array, j - 1)->size)
-            ) < 0;
-            j--
-        )
-            cork_array_at(array, j) = cork_array_at(array, j - 1);
-        cork_array_at(array, j) = tmp;
+    for (i = 1; i < ar_sz; i++) {
+        check_item = cork_array_at(array, i);
+        comp = memcmp(
+                ins_item->buf, check_item->buf,
+                MAX(ins_item->size, check_item->size));
+        if (comp == 0)
+            // Term is duplicate. Exit without inserting.
+            return(0);
+        else if (comp > 0) {
+            // Inserted item is greater than current one. Inserting after.
+            // Shift all item past this one by one slot.
+            cork_array_ensure_size(array, ar_sz + 1);
+            for(j = ar_sz - 1; j > i; j--) {
+                cork_buffer_copy(
+                        cork_array_at(array, j + 1), cork_array_at(array, j));
+            }
+            cork_buffer_copy(cork_array_at(array, i), ins_item);
+            return(0);
+        }
     }
+    return(0);
 }
 
 static bool subj_array_contains(const CAN_NodeArray* subjects, librdf_node* el)
@@ -125,7 +124,7 @@ int CAN_canonicize(
             fputc('\n', stdout);
 
             cork_array_append(&subjects, subject);
-            cork_array_append(&ser_subjects, subj_buf + i);
+            array_insert_ordered(&ser_subjects, subj_buf + i);
 
             capacity += (subj_buf + i)->size + 2;
         } else {
@@ -142,8 +141,6 @@ int CAN_canonicize(
 
     librdf_free_statement(stmt);
     cork_array_done(&subjects);
-
-    sort_terms(&ser_subjects);
 
     cork_buffer_ensure_size(buf, capacity);
     size_t subj_size = cork_array_size(&ser_subjects);
@@ -180,7 +177,6 @@ int encode_subject(
         if (subj_array_contains(ctx->visited_nodes, subject)) {
             if (librdf_node_equals(subject, ctx->orig_subj)) {
                 cork_buffer_set(subj_buf, CAN_ORIG_S, 1);
-
                 return(0);
             } else {
                 cork_buffer_clear(subj_buf);
@@ -207,60 +203,48 @@ int encode_preds(
     CAN_context* ctx, librdf_node* subject, CAN_Buffer* pred_buf
 ) {
     librdf_iterator* props_it = librdf_model_get_arcs_out(ctx->model, subject);
-    CAN_NodeArray props_a;
-    cork_array_init(&props_a);
 
     // Build ordered predicates array.
     while(!librdf_iterator_end(props_it)){
-        cork_array_append(&props_a, librdf_iterator_get_object(props_it));
-        /* TODO Insert sorted. */
-        librdf_iterator_next(props_it);
-    }
+        // Start of predicate block.
+        cork_buffer_append(pred_buf, CAN_P_START, 1);
+        librdf_node* pred = librdf_iterator_get_object(props_it);
+        CAN_Buffer pred_tmp_buf;
 
-    // Append serialized perdicates and objects to buffer. 
-    for(size_t i = 0; i < cork_array_size(&props_a); i++){
-        librdf_node* p = cork_array_at(&props_a, i);
-        CAN_NodeArray obj_a;
-        cork_array_init(&obj_a);
+        serialize(ctx, pred, &pred_tmp_buf);
+        cork_buffer_append_copy(pred_buf, &pred_tmp_buf);
 
         // Build ordered array of objects.
         librdf_iterator* obj_it = librdf_model_get_targets(
-                ctx->model, subject, p);
+                ctx->model, subject, pred);
         while (!librdf_iterator_end(obj_it)){
-            cork_array_append(&obj_a, librdf_iterator_get_object(obj_it));
-            librdf_iterator_next(obj_it);
-        }
-        librdf_free_iterator(obj_it);
-
-        // Start of predicate block.
-        cork_buffer_append(pred_buf, CAN_P_START, 1);
-
-        // Append serialized objects to object buffer.
-        for(size_t j = 0; j < cork_array_size(&obj_a); j++){
+            // Append serialized objects to object buffer.
             CAN_Buffer* obj_buf = cork_buffer_new();
-
-            encode_object(ctx, cork_array_at(&obj_a, j), obj_buf);
+            encode_object(ctx, librdf_iterator_get_object(obj_it), obj_buf);
 
             cork_buffer_append(pred_buf, CAN_O_START, 1);
             cork_buffer_append_copy(pred_buf, obj_buf);
             cork_buffer_append(pred_buf, CAN_O_END, 1);
 
             cork_buffer_free(obj_buf);
+            librdf_iterator_next(obj_it);
         }
+        librdf_free_iterator(obj_it);
 
         // End of predicate block.
         cork_buffer_append(pred_buf, CAN_P_END, 1);
-
-        cork_array_done(&obj_a);
+        librdf_iterator_next(props_it);
     }
-    cork_array_done(&props_a);
     librdf_free_iterator(props_it);
+
+    printf("Canonicized predicate: ");
+    fwrite(pred_buf->buf, 1, pred_buf->size, stdout);
+    fputc('\n', stdout);
     return(0);
 }
 
-int encode_object(
-    CAN_context* ctx, librdf_node* object, CAN_Buffer* obj_buf
-) {
+int encode_object(CAN_context* ctx, librdf_node* object, CAN_Buffer* obj_buf)
+{
     if (librdf_node_get_type(object) == LIBRDF_NODE_TYPE_BLANK) {
         encode_subject(ctx, object, obj_buf);
     } else {
@@ -270,14 +254,12 @@ int encode_object(
     return(0);
 }
 
-int serialize(
-        CAN_context* ctx, librdf_node* node, CAN_Buffer* node_buf){
+int serialize(CAN_context* ctx, librdf_node* node, CAN_Buffer* node_buf)
+{
     raptor_iostream* iostr = raptor_new_iostream_to_string(
         ctx->raptor_world, &(node_buf->buf), &(node_buf->size), malloc
     );
-    int ret = librdf_node_write(node, iostr);
-    printf("node buffer write result: %d\n", ret);
-    printf("node buffer: %s\n", (char*)node_buf->buf);
+    librdf_node_write(node, iostr);
     raptor_iostream_write_end(iostr);
     raptor_free_iostream(iostr);
 
