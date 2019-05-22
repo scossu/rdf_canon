@@ -16,8 +16,17 @@ static inline int array_insert_ordered(
     int comp;
     size_t ar_sz = cork_array_size(array);
     CAN_Buffer* check_item;
+    printf(
+            "Inserting %s into array of %lu items at %lu.\n",
+            (unsigned char*)ins_item->buf, cork_array_size(array), (void*)array);
 
-    for (i = 1; i < ar_sz; i++) {
+    if (ar_sz == 0) {
+        printf("Inserting first element in array.\n");
+        cork_array_append(array, ins_item);
+        return(0);
+    }
+
+    for (i = 0; i < ar_sz; i++) {
         check_item = cork_array_at(array, i);
         comp = memcmp(
                 ins_item->buf, check_item->buf,
@@ -28,6 +37,7 @@ static inline int array_insert_ordered(
         else if (comp > 0) {
             // Inserted item is greater than current one. Inserting after.
             // Shift all item past this one by one slot.
+            printf("Inserting at %d", i);
             cork_array_ensure_size(array, ar_sz + 1);
             for(j = ar_sz - 1; j > i; j--) {
                 cork_buffer_copy(
@@ -95,7 +105,7 @@ int CAN_canonicize(
         //CAN_Buffer* subj_buf = encoded_subjs + i;
         cork_array_init(ctx->visited_nodes);
         cork_buffer_init(subj_buf + i);
-        printf("i: %lu\n", i);
+        //printf("i: %lu\n", i);
 
         /* Get the statement (triple) */
         stmt = librdf_stream_get_object(stream);
@@ -144,6 +154,7 @@ int CAN_canonicize(
 
     cork_buffer_ensure_size(buf, capacity);
     size_t subj_size = cork_array_size(&ser_subjects);
+    printf("Number of serialized subjects: %lu\n", subj_size);
     for(i = 0; i < subj_size; i++){
         //printf("i: %lu\n", i);
         CAN_Buffer* el = cork_array_at(&ser_subjects, i);
