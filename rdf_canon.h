@@ -62,13 +62,4 @@ typedef struct CAN_context {
 
 int CAN_canonicize(librdf_world* world, librdf_model* model, CAN_Buffer* buf);
 
-int encode_subject(
-        CAN_context* ctx, librdf_node* subject, CAN_Buffer* subj_buf);
-
-int encode_preds(
-        CAN_context* ctx, librdf_node* subject, CAN_Buffer* pred_buf);
-
-int encode_object(
-        CAN_context* ctx, librdf_node* object, CAN_Buffer* obj_buf);
-
 #endif /* _RDF_CANON_H */
