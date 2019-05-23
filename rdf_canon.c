@@ -10,7 +10,7 @@
 #include "rdf_canon.h"
 
 static inline int array_insert_ordered(
-        CAN_BufferArray* array, const CAN_Buffer* ins_item)
+        CAN_BufferArray* array, CAN_Buffer* ins_item)
 {
     unsigned int i, j;
     int comp;
@@ -50,6 +50,19 @@ static inline int array_insert_ordered(
     return(0);
 }
 
+static int serialize(CAN_context* ctx, librdf_node* node, CAN_Buffer* node_buf)
+{
+    raptor_iostream* iostr = raptor_new_iostream_to_string(
+            librdf_world_get_raptor(ctx->world), &(node_buf->buf),
+            &(node_buf->size), malloc);
+    librdf_node_write(node, iostr);
+    raptor_iostream_write_end(iostr);
+    raptor_free_iostream(iostr);
+
+    return(0);
+}
+
+
 static bool subj_array_contains(const CAN_NodeArray* subjects, librdf_node* el)
 {
     size_t i;
@@ -63,6 +76,10 @@ static bool subj_array_contains(const CAN_NodeArray* subjects, librdf_node* el)
 }
 
 
+/*
+ * Public API.
+ */
+
 int CAN_canonicize(
         librdf_world* world, librdf_model* model, CAN_Buffer* buf)
 {
@@ -74,7 +91,6 @@ int CAN_canonicize(
 
     ctx->world = world;
     ctx->model = model;
-    ctx->raptor_world = librdf_world_get_raptor(world);
 
     size_t capacity = 0;
     /* Initialize a buffer array for the subjects. */
@@ -261,18 +277,6 @@ int encode_object(CAN_context* ctx, librdf_node* object, CAN_Buffer* obj_buf)
     } else {
         serialize(ctx, object, obj_buf);
     }
-
-    return(0);
-}
-
-int serialize(CAN_context* ctx, librdf_node* node, CAN_Buffer* node_buf)
-{
-    raptor_iostream* iostr = raptor_new_iostream_to_string(
-        ctx->raptor_world, &(node_buf->buf), &(node_buf->size), malloc
-    );
-    librdf_node_write(node, iostr);
-    raptor_iostream_write_end(iostr);
-    raptor_free_iostream(iostr);
 
     return(0);
 }
