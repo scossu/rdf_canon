@@ -1,0 +1,4 @@
+_:a <http://foo/w> _:b .
+_:b <http://foo/x> _:c .
+_:c <http://foo/y> _:d .
+_:d <http://foo/z> _:a .

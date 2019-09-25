@@ -1,0 +1,9 @@
+[submodule "ext/raptor"]
+	path = ext/raptor
+	url = https://github.com/dajobe/raptor.git
+[submodule "ext/librdf"]
+	path = ext/librdf
+	url = https://github.com/dajobe/librdf.git
+[submodule "ext/rasqal"]
+	path = ext/rasqal
+	url = https://github.com/dajobe/rasqal.git

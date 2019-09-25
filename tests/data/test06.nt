@@ -1,0 +1,4 @@
+<http://foo/b> <http://foo/t> _:blank01 .
+_:blank01 <http://foo/t> _:blank02 .
+_:blank02 <http://foo/t> <http://foo/c>.
+<http://foo/c> <http://foo/t> <http://foo/a> .

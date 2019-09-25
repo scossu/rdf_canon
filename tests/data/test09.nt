@@ -1,0 +1,5 @@
+# Ceriani Example 1 Graph 1
+
+_:a <http://example.org/p> _:c .
+_:b <http://example.org/p> _:c .
+_:c <http://example.org/p> _:c .
