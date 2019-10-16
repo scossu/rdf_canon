@@ -290,12 +290,16 @@ static int encode_preds(
         // End of predicate block.
         cork_buffer_append(pred_buf, CAN_P_END, 1);
         printf("Canonicized predicate: %s\n", (char*)pred_buf->buf);
-
-        cork_buffer_free(cork_array_at(pred_array, i));
     }
     printf("Done serializing predicates.\n");
-    cork_array_done(pred_array);
+
+    // Free buffers and their raw array.
+    for (i = 0; i < prop_ct; i++){
+        cork_buffer_done(pred_tmp_buf + i);
+    }
     free(pred_tmp_buf);
+    // Free ordered array.
+    cork_array_done(pred_array);
 
     return(0);
 }
