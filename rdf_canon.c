@@ -83,7 +83,7 @@ int CAN_canonicize(
     /* Canonicized subject as a byte buffer. */
     //cork_array_ensure_size(subjects, librdf_model_size(model));
     subj_buf_sz = librdf_model_size(ctx->model);
-    CAN_Buffer* subj_buf = malloc(
+    CAN_Buffer* subj_buf = cork_malloc(
             sizeof(CAN_Buffer) * subj_buf_sz);
     i = 0;
     while(!librdf_stream_end(stream)) {
@@ -162,7 +162,7 @@ int CAN_canonicize(
         }
     }
     printf("Freeing subject buffer at %p.\n", (void*)subj_buf);
-    free(subj_buf);
+    cork_free(subj_buf, sizeof(CAN_Buffer) * subj_buf_sz);
     printf("Freed encoded subjects.\n");
 
     // ...then the ordered array.
@@ -237,11 +237,10 @@ static int encode_preds(
 
     // Build ordered array of serialized predicates.
     i = 0;
-    pred_tmp_buf = malloc(sizeof(CAN_Buffer) * prop_ct);
+    pred_tmp_buf = cork_malloc(sizeof(CAN_Buffer) * prop_ct);
     cork_array_init(pred_array);
     while(!librdf_iterator_end(props_it)){
         cork_buffer_init(pred_tmp_buf + i);
-        //pred_tmp_buf = cork_buffer_new();
         printf("Ordering predicate #%lu.\n", i);
         encode_pred_with_objects(
                 ctx, librdf_iterator_get_object(props_it),
@@ -276,7 +275,7 @@ static int encode_preds(
     for (i = 0; i < prop_ct; i++){
         cork_buffer_done(pred_tmp_buf + i);
     }
-    free(pred_tmp_buf);
+    cork_free(pred_tmp_buf, sizeof(CAN_Buffer) * prop_ct);
     // Free ordered array.
     cork_array_done(pred_array);
 
@@ -313,7 +312,7 @@ static int encode_pred_with_objects(
     printf("%lu objects found.\n", obj_ct);
 
     // Build ordered array of serialized objects.
-    CAN_Buffer* obj_buf = malloc(sizeof(CAN_Buffer) * obj_ct);
+    CAN_Buffer* obj_buf = cork_malloc(sizeof(CAN_Buffer) * obj_ct);
     i = 0;
     cork_array_init(obj_array);
     while (!librdf_iterator_end(obj_it)){
@@ -356,7 +355,7 @@ static int encode_pred_with_objects(
     }
     printf(" Done.\n");
     printf("Freeing object buffer cursor...");
-    free(obj_buf);
+    cork_free(obj_buf, sizeof(CAN_Buffer) * obj_ct);
     printf(" Done.\n");
 
     cork_array_done(obj_array);
