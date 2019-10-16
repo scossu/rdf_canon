@@ -48,8 +48,6 @@ typedef cork_array(librdf_node*) CAN_NodeArray;
 /* An ordered, contiguous array of serialize nodes. */
 typedef cork_array(CAN_Buffer*) CAN_BufferArray;
 
-//static void print_triple(void* user_data, raptor_statement* triple);
-
 typedef struct CAN_context {
     librdf_world* world;
     librdf_model* model;

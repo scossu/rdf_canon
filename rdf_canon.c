@@ -1,3 +1,4 @@
+#include <ctype.h>
 #include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -36,7 +37,7 @@ static inline int serialize(
 static inline bool subj_array_contains(
         const CAN_NodeArray* subjects, librdf_node* el);
 
-static void print_bytes(unsigned char *bs, size_t size);
+static void print_bytes(const unsigned char *bs, const size_t size);
 
 
 /*
@@ -153,6 +154,7 @@ int CAN_canonicize(
         el = NULL;
     }
 
+    // Free the source pointers first...
     for (i = 0; i < subj_buf_sz; i++) {
         if (subj_buf + i != NULL) {
             printf("Freeing subject buffer item at %p.\n", (void*)subj_buf + i);
@@ -162,6 +164,8 @@ int CAN_canonicize(
     printf("Freeing subject buffer at %p.\n", (void*)subj_buf);
     free(subj_buf);
     printf("Freed encoded subjects.\n");
+
+    // ...then the ordered array.
     cork_array_done(ser_subjects);
     printf("Freed encoded subjects array.\n");
 
@@ -217,35 +221,8 @@ static int encode_preds(
     CAN_BufferArray* pred_array = &_pred_array;
     CAN_Buffer *pred_tmp_buf;
 
-    /*
-    size_t ct = librdf_node_encode(subject, NULL, 1024);
-    unsigned char* tmp = malloc(ct);
-    librdf_node_encode(subject, tmp, 1024);
-    printf("Test serialized subject (%lu): ", ct);
-    print_bytes(tmp, ct);
-    free(tmp);
-    printf("Model size: %d\n", librdf_model_size(ctx->model));
-    librdf_stream* s = librdf_model_as_stream(ctx->model);
-    while(!librdf_stream_end(s)) {
-        librdf_stream_get_object(s);
-        librdf_stream_next(s);
-    }
-    printf("About to get test arcs in.\n");
-    librdf_node* uid = librdf_new_node_from_blank_identifier(ctx->world, NULL);
-    librdf_iterator* blah = librdf_model_get_arcs_out(ctx->model, uid);
-    librdf_free_node(uid);
-    printf("Created blah.\n");
-    */
-    librdf_node* uid = librdf_new_node_from_blank_identifier(ctx->world, NULL);
-    //librdf_iterator* tmp_it = librdf_model_get_arcs_out(ctx->model, uid);
-
-    printf("Subject bnode: %s\n", librdf_node_get_blank_identifier(subject));
-    printf("Subject literal: %s\n", librdf_node_get_literal_value(subject));
-    props_it = librdf_model_get_arcs_out(ctx->model, uid);
-    printf("About to get arcs out (#1).\n");
     props_it = librdf_model_get_arcs_out(ctx->model, subject);
     // TODO This is inefficient. Find a way to duplicate the iterator.
-    printf("About to get arcs out (#2).\n");
     props_ct_it = librdf_model_get_arcs_out(ctx->model, subject);
 
     // Count predicates to allocate memory.
@@ -268,9 +245,10 @@ static int encode_preds(
         printf("Ordering predicate #%lu.\n", i);
         encode_pred_with_objects(
                 ctx, librdf_iterator_get_object(props_it),
-                subject, pred_tmp_buf);
-        array_insert_ordered(pred_array, pred_tmp_buf);
-        printf("Last pred added to array: %s\n", (char*)cork_array_at(pred_array, i)->buf);
+                subject, pred_tmp_buf + i);
+        array_insert_ordered(pred_array, pred_tmp_buf + i);
+        printf("Last pred added to array: ");
+        print_bytes(cork_array_at(pred_array, i)->buf, cork_array_at(pred_array, i)->size);
 
         i++;
         librdf_iterator_next(props_it);
@@ -285,7 +263,8 @@ static int encode_preds(
         // Start of predicate block.
         cork_buffer_append(pred_buf, CAN_P_START, 1);
         // Append ordered predicate buffer.
-        printf("Extracting buffer from array: %s\n", (char*)cork_array_at(pred_array, i)->buf);
+        printf("Extracting buffer from array: ");
+        print_bytes(cork_array_at(pred_array, i)->buf, cork_array_at(pred_array, i)->size);
         cork_buffer_append_copy(pred_buf, cork_array_at(pred_array, i));
         // End of predicate block.
         cork_buffer_append(pred_buf, CAN_P_END, 1);
@@ -350,12 +329,17 @@ static int encode_pred_with_objects(
     }
     librdf_free_iterator(obj_it);
 
+    printf("Serialized predicate without object: ");
+    print_bytes(pred_buf_cur->buf, pred_buf_cur->size);
+
     // Build the object buffer.
     for(i = 0; i < cork_array_size(obj_array); i++) {
         obj_buf_cur = cork_array_at(obj_array, i);
-        printf("Processing object #%lu @ %p:\n", i, obj_buf_cur->buf);
-        printf("%s\n", (char*)obj_buf_cur->buf);
+        printf("Processing object #%lu @ %p with length %lu:\n", i, obj_buf_cur->buf, obj_buf_cur->size);
+        print_bytes(obj_buf_cur->buf, obj_buf_cur->size);
+        //printf("%s\n", (char*)obj_buf_cur->buf);
 
+        // FIXME This messes up the string in Valgrind, go figure...
         cork_buffer_ensure_size(pred_buf_cur, (obj_buf_cur)->size + 2);
         printf("Allocated.\n");
         cork_buffer_append(pred_buf_cur, CAN_O_START, 1);
@@ -377,7 +361,8 @@ static int encode_pred_with_objects(
 
     cork_array_done(obj_array);
     printf("Freed obj_array.\n");
-    printf("Serialized predicate with object: %s\n", (char*)(pred_buf_cur)->buf);
+    printf("Serialized predicate with object: ");
+    print_bytes(pred_buf_cur->buf, pred_buf_cur->size);
 
     return(0);
 }
@@ -407,14 +392,15 @@ static inline int array_insert_ordered(
     int comp;
     size_t ar_sz = cork_array_size(array);
     CAN_Buffer* check_item;
-    printf(
-            "Inserting %s @ %p\ninto array of %lu items at %p.\n",
-            (unsigned char*)ins_item->buf, ins_item->buf,
-            cork_array_size(array), (void*)array);
+    printf("Inserting ");
+    print_bytes(ins_item->buf, ins_item->size);
 
     if (ar_sz == 0) {
         printf("Inserting first element in array.\n");
         cork_array_append(array, ins_item);
+        printf(
+                "Appended pointer @%p to array item @%p\n",
+                ins_item, cork_array_at(array, 0));
         return(0);
     }
 
@@ -481,11 +467,19 @@ static inline bool subj_array_contains(
     return(false);
 }
 
-static void print_bytes(unsigned char *bs, size_t size) {
-    size_t i = 0;
-    while (i < size) {
-        fputc(bs[i], stdout);
-        i++;
+/**
+ * Print a byte string of a given length in a human-readable format.
+ *
+ * The string is printed in Python style: printable characters are output
+ * literally, and non-printable ones as hex sequences.
+ */
+static void print_bytes(const unsigned char *bs, const size_t size) {
+    for (size_t i = 0; i < size; i++) {
+        if isprint(bs[i]) {
+            fputc(bs[i], stdout);
+        } else {
+            printf("\\x%02x", bs[i]);
+        }
     }
     printf("\n");
 }
