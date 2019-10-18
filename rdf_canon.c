@@ -29,7 +29,7 @@ static int encode_object(
         const CAN_context* ctx, librdf_node* object, CAN_Buffer* obj_buf);
 
 static inline int array_insert_ordered(
-        CAN_BufferArray* array, CAN_Buffer* ins_item);
+        CAN_NodeArray* array, librdf_node* ins_item);
 
 static inline int serialize(
         const CAN_context* ctx, librdf_node* node, CAN_Buffer* node_buf);
@@ -214,68 +214,50 @@ static int encode_subject(
 static int encode_preds(
         const CAN_context* ctx, librdf_node* subject, CAN_Buffer* pred_buf)
 {
-    size_t prop_ct, i;
-    librdf_iterator* props_it;
-    librdf_iterator* props_ct_it;
-    CAN_BufferArray _pred_array;
-    CAN_BufferArray* pred_array = &_pred_array;
-    CAN_Buffer *pred_tmp_buf;
+    // Ordered, de-duplicated array of predicate nodes.
+    CAN_NodeArray _pred_array;
+    CAN_NodeArray* pred_array = &_pred_array;
 
-    props_it = librdf_model_get_arcs_out(ctx->model, subject);
-    // TODO This is inefficient. Find a way to duplicate the iterator.
-    props_ct_it = librdf_model_get_arcs_out(ctx->model, subject);
+    // temporary buffer for individual serialized nodes that are added to
+    // string iteratively.
+    CAN_Buffer* pred_tmp_buf = cork_new(CAN_Buffer);
 
-    // Count predicates to allocate memory.
-    prop_ct = 0;
-    while(!librdf_iterator_end(props_ct_it)){
-        printf("ct (pred): %lu\n", prop_ct);
-        prop_ct++;
-        librdf_iterator_next(props_ct_it);
-    }
-    librdf_free_iterator(props_ct_it);
-    printf("%lu predicates found.\n", prop_ct);
+    librdf_iterator* props_it = librdf_model_get_arcs_out(ctx->model, subject);
 
-    // Build ordered array of serialized predicates.
-    i = 0;
-    pred_tmp_buf = cork_malloc(sizeof(CAN_Buffer) * prop_ct);
+    // Build ordered and unique array of predicates.
     cork_array_init(pred_array);
     while(!librdf_iterator_end(props_it)){
-        cork_buffer_init(pred_tmp_buf + i);
-        printf("Ordering predicate #%lu.\n", i);
-        encode_pred_with_objects(
-                ctx, librdf_iterator_get_object(props_it),
-                subject, pred_tmp_buf + i);
-        array_insert_ordered(pred_array, pred_tmp_buf + i);
-        printf("Last pred added to array: ");
-        print_bytes(cork_array_at(pred_array, i)->buf, cork_array_at(pred_array, i)->size);
-
-        i++;
+        // Librdf returns duplicate predicates, we need to deduplicate them.
+        array_insert_ordered(
+                pred_array, librdf_iterator_get_object(props_it));
         librdf_iterator_next(props_it);
     }
-    printf("De-duplicated predicates: %lu\n", cork_array_size(pred_array));
     librdf_free_iterator(props_it);
 
+    printf("Got %lu predicates.\n", pred_array->size);
+
     // Build byte buffer from serialized predicates + objects.
-    prop_ct = cork_array_size(pred_array);
-    for(i = 0; i < prop_ct; i++) {
-        printf("Processing predicate #%lu of %lu.\n", i, prop_ct);
-        // Start of predicate block.
+    for(size_t i = 0; i < pred_array->size; i++) {
+        printf("Processing predicate #%lu of %lu.\n", i, pred_array->size);
+        cork_buffer_init(pred_tmp_buf);
+        printf("Ordering predicate #%lu.\n", i);
+        encode_pred_with_objects(
+                ctx, cork_array_at(pred_array, i), subject, pred_tmp_buf);
+
+        // Append start of predicate block.
         cork_buffer_append(pred_buf, CAN_P_START, 1);
         // Append ordered predicate buffer.
-        printf("Extracting buffer from array: ");
-        print_bytes(cork_array_at(pred_array, i)->buf, cork_array_at(pred_array, i)->size);
-        cork_buffer_append_copy(pred_buf, cork_array_at(pred_array, i));
-        // End of predicate block.
+        // TODO: Add directly in encode_pred_with_objects?:
+        cork_buffer_append_copy(pred_buf, pred_tmp_buf);
+        // Append end of predicate block.
         cork_buffer_append(pred_buf, CAN_P_END, 1);
         printf("Canonicized predicate: %s\n", (char*)pred_buf->buf);
     }
     printf("Done serializing predicates.\n");
 
-    // Free buffers and their raw array.
-    for (i = 0; i < prop_ct; i++){
-        cork_buffer_done(pred_tmp_buf + i);
-    }
-    cork_free(pred_tmp_buf, sizeof(CAN_Buffer) * prop_ct);
+    // Free temp buffer and its pointer.
+    cork_buffer_done(pred_tmp_buf);
+    cork_delete(CAN_Buffer, pred_tmp_buf);
     // Free ordered array.
     cork_array_done(pred_array);
 
@@ -287,77 +269,60 @@ static int encode_pred_with_objects(
         const CAN_context* ctx, librdf_node* pred_node, librdf_node* subject,
         CAN_Buffer* pred_buf_cur)
 {
-    size_t obj_ct, i;
-    CAN_Buffer* obj_buf_cur;
-    CAN_BufferArray obj_array_s;
-    CAN_BufferArray* obj_array = &obj_array_s;
-    librdf_iterator *obj_it, *obj_ct_it;
+    // Ordered, de-duplicated array of object nodes.
+    CAN_NodeArray obj_array_s;
+    CAN_NodeArray* obj_array = &obj_array_s;
 
-    printf("Predicate node to encode at %p.\n", (void*)pred_node);
-    serialize(ctx, pred_node, pred_buf_cur);
-    printf("N3 predicate: %s\n", (char*)(pred_buf_cur)->buf);
+    // temporary buffer for individual serialized nodes that are added to
+    // string iteratively.
+    CAN_Buffer* obj_tmp_buf = cork_new(CAN_Buffer);
 
-    // Object ordering and serialization.
-
-    obj_it = librdf_model_get_targets(ctx->model, subject, pred_node);
-    // Count objects to allocate memory.
-    // TODO This is inefficient. Find a way to duplicate the iterator.
-    obj_ct_it = librdf_model_get_targets(ctx->model, subject, pred_node);
-    obj_ct = 0;
-    while(!librdf_iterator_end(obj_ct_it)){
-        obj_ct++;
-        librdf_iterator_next(obj_ct_it);
-    }
-    librdf_free_iterator(obj_ct_it);
-    printf("%lu objects found.\n", obj_ct);
+    librdf_iterator* obj_it = librdf_model_get_targets(
+            ctx->model, subject, pred_node);
 
     // Build ordered array of serialized objects.
-    CAN_Buffer* obj_buf = cork_malloc(sizeof(CAN_Buffer) * obj_ct);
-    i = 0;
     cork_array_init(obj_array);
     while (!librdf_iterator_end(obj_it)){
-        printf("Ordering object #%lu:\n", i);
-        cork_buffer_init(obj_buf + i);
-        encode_object(ctx, librdf_iterator_get_object(obj_it), obj_buf + i);
-        printf("Canonicized object: %s\n", (char*)(obj_buf + i)->buf);
-        // Append serialized object to object buffer array.
-        array_insert_ordered(obj_array, obj_buf + i);
-
-        i++;
+        // Librdf returns duplicate predicates, we need to deduplicate them.
+        array_insert_ordered(
+                obj_array, librdf_iterator_get_object(obj_it));
         librdf_iterator_next(obj_it);
     }
     librdf_free_iterator(obj_it);
 
-    printf("Serialized predicate without object: ");
-    print_bytes(pred_buf_cur->buf, pred_buf_cur->size);
+    printf("Got %lu objects.\n", obj_array->size);
 
-    // Build the object buffer.
-    for(i = 0; i < cork_array_size(obj_array); i++) {
-        obj_buf_cur = cork_array_at(obj_array, i);
-        printf("Processing object #%lu @ %p with length %lu:\n", i, obj_buf_cur->buf, obj_buf_cur->size);
-        print_bytes(obj_buf_cur->buf, obj_buf_cur->size);
-        //printf("%s\n", (char*)obj_buf_cur->buf);
+    // Serialize the predicate first.
+    serialize(ctx, pred_node, pred_buf_cur);
+    /*
+    printf("Predicate node to encode at %p.\n", (void*)pred_node);
+    printf("N3 predicate: %s\n", (char*)(pred_buf_cur)->buf);
+    */
 
+    // Build byte buffer from serialized objects.
+    for(size_t i = 0; i < obj_array->size; i++) {
+        cork_buffer_init(obj_tmp_buf);
+        encode_object(ctx, cork_array_at(obj_array, i), obj_tmp_buf);
+        printf("Canonicized object: %s\n", (char*)(obj_tmp_buf)->buf);
         // FIXME This messes up the string in Valgrind, go figure...
-        cork_buffer_ensure_size(pred_buf_cur, (obj_buf_cur)->size + 2);
-        printf("Allocated.\n");
+        //cork_buffer_ensure_size(pred_buf_cur, (obj_tmp_buf)->size + 2);
+
+        // Append serialized object to object buffer array.
         cork_buffer_append(pred_buf_cur, CAN_O_START, 1);
         printf("Added start block.\n");
-        cork_buffer_append_copy(pred_buf_cur, obj_buf_cur);
+        cork_buffer_append_copy(pred_buf_cur, obj_tmp_buf);
         printf("Added object buffer.\n");
         cork_buffer_append(pred_buf_cur, CAN_O_END, 1);
         printf("Added end block.\n");
 
+        printf("Canonicized object: %s\n", (char*)obj_tmp_buf->buf);
     }
-    printf("Freeing object buffer items...");
-    for(i = 0; i < obj_ct; i++) {
-        cork_buffer_done(obj_buf + i);
-    }
-    printf(" Done.\n");
-    printf("Freeing object buffer cursor...");
-    cork_free(obj_buf, sizeof(CAN_Buffer) * obj_ct);
-    printf(" Done.\n");
+    printf("Done serializing objects.\n");
 
+    // Free temp buffer and its pointer.
+    cork_buffer_done(obj_tmp_buf);
+    cork_delete(CAN_Buffer, obj_tmp_buf);
+    // Free ordered array.
     cork_array_done(obj_array);
     printf("Freed obj_array.\n");
     printf("Serialized predicate with object: ");
@@ -385,14 +350,12 @@ static int encode_object(
  */
 
 static inline int array_insert_ordered(
-        CAN_BufferArray* array, CAN_Buffer* ins_item)
+        CAN_NodeArray* array, librdf_node* ins_item)
 {
     unsigned int i, j;
     int comp;
     size_t ar_sz = cork_array_size(array);
     CAN_Buffer* check_item;
-    printf("Inserting ");
-    print_bytes(ins_item->buf, ins_item->size);
 
     if (ar_sz == 0) {
         printf("Inserting first element in array.\n");
@@ -409,9 +372,6 @@ static inline int array_insert_ordered(
         comp = memcmp(
                 ins_item->buf, check_item->buf,
                 MAX(ins_item->size, check_item->size));
-        printf(
-                "Comparing inserted item %s\nwith stored item %s\n",
-                (char*)ins_item->buf, (char*)check_item->buf);
         printf("Comp: %d.\n", comp);
         if (comp == 0) {
             // Term is duplicate. Exit without inserting.
