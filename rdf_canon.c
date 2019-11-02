@@ -36,10 +36,6 @@ typedef cork_array(CAN_NodePair*) CAN_NodePairArray;
  * Static prototypes.
  */
 
-static inline void np_free(CAN_NodePair* np);
-
-static inline void np_free(CAN_NodePair* np);
-
 //static void npair_array_init_f(void* el, void* user_data);
 
 static void npair_array_done_f(void* el, void* user_data);
@@ -54,8 +50,10 @@ static int encode_pred_with_objects(
         const CAN_Context* ctx, librdf_node* pred_node, librdf_node* subject,
         CAN_Buffer* pred_buf_cur);
 
-static int encode_object(
-        const CAN_Context* ctx, librdf_node* object, CAN_Buffer* obj_buf);
+// Remove these three guys after testing.
+typedef cork_array(char*) CHArray;
+static inline int test_array_insert_ordered(CHArray* array, char* ins_item);
+void test_insert();
 
 static inline int nparray_insert_ordered(
         const CAN_Context* ctx, CAN_NodePairArray* array, librdf_node* ins_item);
@@ -76,17 +74,17 @@ static void print_bytes(const unsigned char *bs, const size_t size);
 int CAN_canonicize(
         librdf_world* world, librdf_model* model, CAN_Buffer* buf)
 {
+    test_insert();
     CAN_Context* ctx = cork_new(CAN_Context);
     CAN_NodeArray visited_nodes;
     ctx->visited_nodes = &visited_nodes;
     ctx->world = world;
     ctx->model = model;
 
-    CAN_NodePairArray* subj_array = cork_new(CAN_NodePairArray);
+    CAN_NodePairArray _subj_array;
+    CAN_NodePairArray* subj_array = &_subj_array;
     cork_array_init(subj_array);
-    //cork_array_set_init(subj_array, &npair_array_init_f);
-    cork_array_set_remove(subj_array, &npair_array_done_f);
-    //cork_array_set_callback_data(subj_array, ctx, NULL);
+    cork_array_set_done(subj_array, &npair_array_done_f);
 
     CAN_Buffer* subj_tmp_buf = cork_new(CAN_Buffer);
 
@@ -114,8 +112,9 @@ int CAN_canonicize(
         librdf_statement_print(stmt, stdout);
         fputc('\n', stdout);
 
+        librdf_node* subj = librdf_statement_get_subject(stmt);
         nparray_insert_ordered(
-                ctx, subj_array, librdf_statement_get_subject(stmt));
+                ctx, subj_array, subj);
 
         librdf_stream_next(stream);
     }
@@ -146,12 +145,12 @@ int CAN_canonicize(
     }
 
     // Free the source pointers first...
+    cork_buffer_done(subj_tmp_buf);
     cork_free(subj_tmp_buf, sizeof(CAN_Buffer));
     printf("Freed encoded subjects.\n");
 
     // ...then the ordered array.
     cork_array_done(subj_array);
-    cork_delete(CAN_NodePairArray, subj_array);
     printf("Freed subjects array.\n");
 
     cork_delete(CAN_Context, ctx);
@@ -206,6 +205,7 @@ static int encode_preds(
 
     // Build ordered and unique array of predicates.
     cork_array_init(pred_array);
+    cork_array_set_done(pred_array, &npair_array_done_f);
     while(!librdf_iterator_end(props_it)){
         // Librdf returns duplicate predicates, we need to deduplicate them.
         nparray_insert_ordered(
@@ -247,8 +247,8 @@ static int encode_pred_with_objects(
         CAN_Buffer* pred_buf_cur)
 {
     // Ordered, de-duplicated array of object nodes.
-    CAN_NodePairArray obj_array_s;
-    CAN_NodePairArray* obj_array = &obj_array_s;
+    CAN_NodePairArray _obj_array;
+    CAN_NodePairArray* obj_array = &_obj_array;
 
     // temporary buffer for individual serialized nodes that are added to
     // string iteratively.
@@ -257,8 +257,10 @@ static int encode_pred_with_objects(
     librdf_iterator* obj_it = librdf_model_get_targets(
             ctx->model, subject, pred_node);
 
-    // Build ordered array of serialized objects.
+    // Build ordered array of serialized objects. The nodes are serialized
+    // as they are sorted and saved for the next loop.
     cork_array_init(obj_array);
+    cork_array_set_done(obj_array, &npair_array_done_f);
     while (!librdf_iterator_end(obj_it)){
         // Librdf returns duplicate predicates, we need to deduplicate them.
         nparray_insert_ordered(
@@ -277,7 +279,9 @@ static int encode_pred_with_objects(
     // Build byte buffer from serialized objects.
     for(size_t i = 0; i < obj_array->size; i++) {
         CAN_NodePair* npair_cur = cork_array_at(obj_array, i);
-        encode_object(ctx, npair_cur->node, npair_cur->s_node);
+        if (librdf_node_get_type(npair_cur->node) == LIBRDF_NODE_TYPE_BLANK) {
+            encode_subject(ctx, npair_cur->node, npair_cur->s_node);
+        }
         printf("Canonicized object: ");
         print_bytes(npair_cur->s_node->buf, npair_cur->s_node->size);
         // FIXME This messes up the string in Valgrind, go figure...
@@ -303,22 +307,6 @@ static int encode_pred_with_objects(
 }
 
 
-static int encode_object(
-        const CAN_Context* ctx, librdf_node* object, CAN_Buffer* obj_buf)
-{
-    if (librdf_node_get_type(object) == LIBRDF_NODE_TYPE_BLANK) {
-        encode_subject(ctx, object, obj_buf);
-    /*
-    } else {
-        // Wait.. is it already serialized in the caller's NodePair?
-        serialize(ctx, object, obj_buf);
-    */
-    }
-
-    return(0);
-}
-
-
 /*
  * Static helper functions.
  */
@@ -338,15 +326,21 @@ static int encode_object(
 /**
  * Free the underlying array element.
  */
-static void npair_array_done_f(void* el, void* user_data)
+static void npair_array_done_f(void* user_data, void* el)
 {
-    CAN_NodePair* np = (CAN_NodePair*)el;
-
-    if (np->node != NULL) {
-        librdf_free_node(np->node);
-    }
-    if (np->s_node != NULL) {
-        cork_buffer_free(np->s_node);
+    if (el != NULL) {
+        CAN_NodePair* np = ((CAN_NodePair**)el)[0];
+        printf("Freeing elements in NodePair @ %p\n", np);
+        /*
+        if (np->node != NULL) {
+            librdf_free_node(np->node);
+        }
+        */
+        if (np->s_node != NULL) {
+            printf("Freeing buffer in NodePair @ %p: %s\n", np->s_node, (char*)np->s_node->buf);
+            cork_buffer_free(np->s_node);
+        }
+        //cork_delete(CAN_NodePair, np);
     }
 }
 
@@ -361,20 +355,10 @@ static inline CAN_NodePair* np_new_from_node(
     np->node = node;
     np->s_node = cork_buffer_new();
     serialize(ctx, np->node, np->s_node);
+    printf("Allocated new NodePair @ %p\n", np);
+    printf("Allocated buffer in NodePair @ %p\n", np->s_node);
 
     return(np);
-}
-
-
-/**
- * Free a CAN_NodePair.
- *
- * This frees the underlying serialized node, but not the librdf node.
- */
-static inline void np_free(CAN_NodePair* np)
-{
-    cork_buffer_free(np->s_node);
-    cork_delete(CAN_NodePair, np);
 }
 
 
@@ -391,22 +375,23 @@ static inline void np_free(CAN_NodePair* np)
 static inline int nparray_insert_ordered(
         const CAN_Context* ctx, CAN_NodePairArray* array, librdf_node* ins_item)
 {
-    size_t ar_sz = cork_array_size(array);
-
     CAN_NodePair* new_np = np_new_from_node(ctx, ins_item);
 
-    if (ar_sz == 0) {
-        printf("Inserting first element in array.\n");
+    if (array->size == 0) {
+        printf("Inserting first element in array: %s.\n", (char*)new_np->s_node->buf);
         cork_array_append(array, new_np);
+        //printf("new_np: %p array np: %p\n", new_np, cork_array_at(array, 0));
+        //printf("new_np->s_node: %p array np->s_node: %p\n", new_np->s_node, cork_array_at(array, 0)->s_node);
         return(0);
     }
 
-    for (unsigned int i = 0; i < ar_sz; i++) {
+    for (unsigned int i = 0; i < array->size; i++) {
         CAN_Buffer* check_item = cork_array_at(array, i)->s_node;
         printf("Check item @: %p\n", check_item->buf);
         int comp = memcmp(
                 new_np->s_node->buf, check_item->buf,
                 MAX(new_np->s_node->size, check_item->size));
+        printf("Compare %s with %s.\n", (char*)new_np->s_node->buf, (char*)check_item->buf);
         printf("Comp: %d.\n", comp);
         if (comp == 0) {
             // Term is duplicate. Exit without inserting.
@@ -414,21 +399,111 @@ static inline int nparray_insert_ordered(
             return(0);
         } else if (comp > 0 || i == 0) {
             // Inserted item is greater than current one. Inserting after.
-            // Shift all item past this one by one slot.
-            printf("Inserting at position %d.\n", i + 1);
-            cork_array_ensure_size(array, ar_sz + 1);
-            ar_sz++;
+            // Make room in the array for shuffling and for the new element.
+            cork_array_ensure_size(array, array->size + 1);
+            array->size++;
             printf("i = %u\n", i);
-            // cork_array_at(array, i + 1) = cork_buffer_new();
-            for(unsigned int j = ar_sz - 1; j > i; j--) {
+            // Shift all item past this one by one slot.
+            unsigned int j;
+            for(j = array->size - 2; j > i; j--) {
                 printf("j = %u\n", j);
                 cork_array_at(array, j) = cork_array_at(array, j - 1);
             }
-            cork_array_append(array, new_np);
+            printf("Inserting at position %d.\n", j + 1);
+            cork_array_at(array, j + 1) = new_np;
+            //cork_array_append(array, new_np);
             printf("Done shifting ordered array items.\n");
             printf("New ordered array size: %lu.\n", cork_array_size(array));
             return(0);
         }
+        // If comp < 0, continue until a smaller or equal term is found.
+    }
+    printf("*** Could not insert element in array!\n");
+    exit(1);
+}
+
+
+static inline void list(CHArray* a)
+{
+    for(size_t i = 0; i < cork_array_size(a); i++) {
+        printf("Element %lu: %s\n", i, cork_array_at(a, i));
+    }
+}
+
+void test_insert()
+{
+    CHArray _a;
+    CHArray* a = &_a;
+    cork_array_init(a);
+
+    char *str1 = "a", *str2 = "b", *str3 = "b", *str4 = "c";
+
+    printf("Inserting %s\n", str3);
+    test_array_insert_ordered(a, str3);
+    list(a);
+    printf("Inserting %s\n", str1);
+    test_array_insert_ordered(a, str1);
+    list(a);
+    printf("Inserting %s\n", str2);
+    test_array_insert_ordered(a, str2);
+    list(a);
+    printf("Inserting %s\n", str4);
+    test_array_insert_ordered(a, str4);
+    list(a);
+}
+
+static inline int test_array_insert_ordered(CHArray* array, char* ins_item)
+{
+    if (array->size == 0) {
+        printf("Inserting first element in array: %s.\n", ins_item);
+        cork_array_append(array, ins_item);
+        //printf("new_np: %p array np: %p\n", new_np, cork_array_at(array, 0));
+        //printf("new_np->s_node: %p array np->s_node: %p\n", new_np->s_node, cork_array_at(array, 0)->s_node);
+        return(0);
+    }
+
+    for (unsigned int i = 0; i < array->size; i++) {
+        char* check_item = cork_array_at(array, i);
+        int comp = strcmp(ins_item, check_item);
+        printf("Compare %s with %s.\n", ins_item, check_item);
+        printf("Comp: %d.\n", comp);
+        if (comp == 0) {
+            // Term is duplicate. Exit without inserting.
+            printf("Duplicate term. Skipping.\n");
+            return(0);
+        } else if (comp < 0 && array->size == 1) {
+            // If there is only another element and it's greater than the
+            // new one, insert the new one at the beginning.
+            cork_array_ensure_size(array, 2);
+            array->size = 2;
+            cork_array_at(array, 1) = cork_array_at(array, 0);
+            cork_array_at(array, 0) = ins_item;
+            return(0);
+        } else if (comp > 0) {
+            // Inserted item is greater than current one. Inserting after.
+
+            // There is still a chance the the next term is a duplicate.
+            if(i < array->size - 1 && strcmp(ins_item, cork_array_at(i + 1)) == 0){
+                printf("Duplicate term. Skipping.\n");
+                exit(0);
+            }
+            // Make room in the array for shuffling and for the new element.
+            cork_array_ensure_size(array, array->size + 1);
+            array->size++;
+            printf("i = %u\n", i);
+            // Shift all item past this one by one slot.
+            unsigned int j;
+            for(j = array->size - 2; j > i; j--) {
+                printf("j = %u\n", j);
+                cork_array_at(array, j) = cork_array_at(array, j - 1);
+            }
+            printf("Inserting at position %d.\n", j + 1);
+            cork_array_at(array, j + 1) = ins_item;
+            printf("Done shifting ordered array items.\n");
+            printf("New ordered array size: %lu.\n", cork_array_size(array));
+            return(0);
+        }
+        // If comp < 0, continue until a smaller or equal term is found.
     }
     printf("*** Could not insert element in array!\n");
     exit(1);
