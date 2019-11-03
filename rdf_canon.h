@@ -50,11 +50,6 @@ typedef struct cork_buffer CAN_Buffer;
 typedef cork_array(librdf_node*) CAN_NodeArray;
 
 /*
- * An ordered, contiguous array of serialized nodes.
- */
-typedef cork_array(CAN_Buffer*) CAN_BufferArray;
-
-/*
  * Environment context that gets passed around functions.
  */
 typedef struct CAN_Context {
