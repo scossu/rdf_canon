@@ -54,6 +54,7 @@ typedef cork_array(librdf_node*) CAN_NodeArray;
  */
 typedef struct CAN_Context {
     librdf_world* world;
+    librdf_storage* storage;
     librdf_model* model;
     CAN_NodeArray* visited_nodes;
     librdf_node* orig_subj;
@@ -62,6 +63,9 @@ typedef struct CAN_Context {
 
 /* * * FUNCTION PROTOTYPES * * */
 
-int CAN_canonicize(librdf_world* world, librdf_model* model, CAN_Buffer* buf);
+CAN_Context* CAN_context_new();
+void CAN_context_free(CAN_Context* ctx);
+
+int CAN_canonicize(CAN_Context* ctx, CAN_Buffer* buf);
 
 #endif /* _RDF_CANON_H */

@@ -72,19 +72,46 @@ static void print_bytes(const unsigned char *bs, const size_t size);
  * Public API.
  */
 
-int CAN_canonicize(
-        librdf_world* world, librdf_model* model, CAN_Buffer* buf)
+CAN_Context* CAN_context_new()
 {
     CAN_Context* ctx = cork_new(CAN_Context);
-    CAN_NodeArray visited_nodes;
-    ctx->visited_nodes = &visited_nodes;
-    ctx->world = world;
-    ctx->model = model;
 
-    CAN_NodePairArray _subj_array;
-    CAN_NodePairArray* subj_array = &_subj_array;
-    cork_array_init(subj_array);
-    cork_array_set_done(subj_array, &npair_array_done_f);
+    ctx->world = librdf_new_world();
+    librdf_world_open(ctx->world);
+
+    ctx->storage = librdf_new_storage(ctx->world, "memory", NULL, NULL);
+
+    ctx->model = librdf_new_model(ctx->world, ctx->storage, NULL);
+
+    ctx->visited_nodes = cork_new(CAN_NodeArray);
+    cork_array_init(ctx->visited_nodes);
+
+   return(ctx);
+}
+
+
+void CAN_context_free(CAN_Context* ctx)
+{
+    cork_array_done(ctx->visited_nodes);
+    cork_delete(CAN_NodeArray, ctx->visited_nodes);
+
+    librdf_free_model(ctx->model);
+    printf("Freed model.\n");
+    librdf_free_storage(ctx->storage);
+    printf("Freed storage.\n");
+
+    librdf_free_world(ctx->world);
+    printf("Freed world.\n");
+
+    cork_delete(CAN_Context, ctx);
+}
+
+
+int CAN_canonicize(CAN_Context* ctx, CAN_Buffer* buf)
+{
+    CAN_NodePairArray subj_array;
+    cork_array_init(&subj_array);
+    cork_array_set_done(&subj_array, &npair_array_done_f);
 
     CAN_Buffer* subj_tmp_buf = cork_new(CAN_Buffer);
 
@@ -114,7 +141,7 @@ int CAN_canonicize(
 
         librdf_node* subj = librdf_statement_get_subject(stmt);
         nparray_insert_ordered(
-                ctx, subj_array, subj);
+                ctx, &subj_array, subj);
 
         librdf_stream_next(stream);
     }
@@ -123,9 +150,8 @@ int CAN_canonicize(
     librdf_free_stream(stream);
 
     // Serialize the subjects and, iteratively, the whole statements.
-    for (size_t i = 0; i < subj_array->size; i++){
-        librdf_node* subject = cork_array_at(subj_array, i)->node;
-        cork_array_init(ctx->visited_nodes);
+    for (size_t i = 0; i < subj_array.size; i++){
+        librdf_node* subject = cork_array_at(&subj_array, i)->node;
         cork_buffer_init(subj_tmp_buf);
         /* Original subject that gets passed down the call stack. */
         ctx->orig_subj = subject;
@@ -135,8 +161,6 @@ int CAN_canonicize(
         printf("Canonicized subject: ");
         fwrite(subj_tmp_buf->buf, 1, subj_tmp_buf->size, stdout);
         fputc('\n', stdout);
-
-        cork_array_done(ctx->visited_nodes);
 
         cork_buffer_append(buf, CAN_S_START, 1);
         cork_buffer_append_copy(buf, subj_tmp_buf);
@@ -150,10 +174,8 @@ int CAN_canonicize(
     printf("Freed encoded subjects.\n");
 
     // ...then the ordered array.
-    cork_array_done(subj_array);
+    cork_array_done(&subj_array);
     printf("Freed subjects array.\n");
-
-    cork_delete(CAN_Context, ctx);
 
     return(0);
 }
@@ -165,8 +187,7 @@ int CAN_canonicize(
 static int encode_subject(
         const CAN_Context* ctx, librdf_node* subject, CAN_Buffer* subj_buf)
 {
-    CAN_Buffer _pred_buf;
-    CAN_Buffer* pred_buf = &_pred_buf;
+    CAN_Buffer pred_buf;
 
     if (librdf_node_get_type(subject) == LIBRDF_NODE_TYPE_BLANK) {
         if (subj_array_contains(ctx->visited_nodes, subject)) {
@@ -184,11 +205,11 @@ static int encode_subject(
         serialize(ctx, subject, subj_buf);
         printf("Encoded node: %s\n", (char*)subj_buf->buf);
     }
-    cork_buffer_init(pred_buf);
-    encode_preds(ctx, subject, pred_buf);
-    cork_buffer_append_copy(subj_buf, pred_buf);
+    cork_buffer_init(&pred_buf);
+    encode_preds(ctx, subject, &pred_buf);
+    cork_buffer_append_copy(subj_buf, &pred_buf);
 
-    cork_buffer_done(pred_buf);
+    cork_buffer_done(&pred_buf);
 
     return(0);
 }
