@@ -50,10 +50,11 @@ static int encode_pred_with_objects(
         const CAN_Context* ctx, librdf_node* pred_node, librdf_node* subject,
         CAN_Buffer* pred_buf_cur);
 
-// Remove these three guys after testing.
+/* TODO Move to tests.
 typedef cork_array(char*) CHArray;
 static inline int test_array_insert_ordered(CHArray* array, char* ins_item);
 void test_insert();
+*/
 
 static inline int nparray_insert_ordered(
         const CAN_Context* ctx, CAN_NodePairArray* array, librdf_node* ins_item);
@@ -74,7 +75,6 @@ static void print_bytes(const unsigned char *bs, const size_t size);
 int CAN_canonicize(
         librdf_world* world, librdf_model* model, CAN_Buffer* buf)
 {
-    test_insert();
     CAN_Context* ctx = cork_new(CAN_Context);
     CAN_NodeArray visited_nodes;
     ctx->visited_nodes = &visited_nodes;
@@ -397,7 +397,8 @@ static inline int nparray_insert_ordered(
             // Term is duplicate. Exit without inserting.
             printf("Duplicate term. Skipping.\n");
             return(0);
-        } else if (comp > 0 || i == 0) {
+
+        } else if (comp < 0) {
             // Inserted item is greater than current one. Inserting after.
             // Make room in the array for shuffling and for the new element.
             cork_array_ensure_size(array, array->size + 1);
@@ -405,24 +406,31 @@ static inline int nparray_insert_ordered(
             printf("i = %u\n", i);
             // Shift all item past this one by one slot.
             unsigned int j;
-            for(j = array->size - 2; j > i; j--) {
+            for(j = array->size - 1; j > i; j--) {
                 printf("j = %u\n", j);
                 cork_array_at(array, j) = cork_array_at(array, j - 1);
             }
             printf("Inserting at position %d.\n", j + 1);
-            cork_array_at(array, j + 1) = new_np;
-            //cork_array_append(array, new_np);
+            cork_array_at(array, j) = new_np;
             printf("Done shifting ordered array items.\n");
             printf("New ordered array size: %lu.\n", cork_array_size(array));
             return(0);
+
+        } else if (i == array->size - 1){
+            printf("Inserting at the end.\n");
+            cork_array_append(array, new_np);
+            return(0);
+
         }
-        // If comp < 0, continue until a smaller or equal term is found.
+        // If comp > 0 and not the end, continue until a greater or equal term
+        // is found.
     }
     printf("*** Could not insert element in array!\n");
     exit(1);
 }
 
 
+/* TODO Move to tests.
 static inline void list(CHArray* a)
 {
     for(size_t i = 0; i < cork_array_size(a); i++) {
@@ -436,7 +444,7 @@ void test_insert()
     CHArray* a = &_a;
     cork_array_init(a);
 
-    char *str1 = "a", *str2 = "b", *str3 = "b", *str4 = "c";
+    char *str1 = "a", *str2 = "b", *str3 = "b", *str4 = "c", *str5 = "9";
 
     printf("Inserting %s\n", str3);
     test_array_insert_ordered(a, str3);
@@ -449,6 +457,9 @@ void test_insert()
     list(a);
     printf("Inserting %s\n", str4);
     test_array_insert_ordered(a, str4);
+    list(a);
+    printf("Inserting %s\n", str5);
+    test_array_insert_ordered(a, str5);
     list(a);
 }
 
@@ -471,43 +482,35 @@ static inline int test_array_insert_ordered(CHArray* array, char* ins_item)
             // Term is duplicate. Exit without inserting.
             printf("Duplicate term. Skipping.\n");
             return(0);
-        } else if (comp < 0 && array->size == 1) {
-            // If there is only another element and it's greater than the
-            // new one, insert the new one at the beginning.
-            cork_array_ensure_size(array, 2);
-            array->size = 2;
-            cork_array_at(array, 1) = cork_array_at(array, 0);
-            cork_array_at(array, 0) = ins_item;
-            return(0);
-        } else if (comp > 0) {
-            // Inserted item is greater than current one. Inserting after.
+        } else if (comp < 0) {
+            // Inserted item is less than current one. Inserting before.
 
-            // There is still a chance the the next term is a duplicate.
-            if(i < array->size - 1 && strcmp(ins_item, cork_array_at(i + 1)) == 0){
-                printf("Duplicate term. Skipping.\n");
-                exit(0);
-            }
             // Make room in the array for shuffling and for the new element.
             cork_array_ensure_size(array, array->size + 1);
             array->size++;
             printf("i = %u\n", i);
             // Shift all item past this one by one slot.
             unsigned int j;
-            for(j = array->size - 2; j > i; j--) {
+            for(j = array->size - 1; j > i; j--) {
                 printf("j = %u\n", j);
                 cork_array_at(array, j) = cork_array_at(array, j - 1);
             }
             printf("Inserting at position %d.\n", j + 1);
-            cork_array_at(array, j + 1) = ins_item;
+            cork_array_at(array, j) = ins_item;
             printf("Done shifting ordered array items.\n");
             printf("New ordered array size: %lu.\n", cork_array_size(array));
             return(0);
+        } else if (i == array->size - 1){
+            printf("Inserting at the end.\n");
+            cork_array_append(array, ins_item);
+            return(0);
         }
-        // If comp < 0, continue until a smaller or equal term is found.
+        // If comp > 0 and not the end, continue until a greater or equal term is found.
     }
     printf("*** Could not insert element in array!\n");
     exit(1);
 }
+*/
 
 
 static int inline serialize(
