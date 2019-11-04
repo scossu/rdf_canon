@@ -1,9 +1,10 @@
-========
-RDF Hash
-========
+RDF Canon
+=========
 
-This libray generates a canonical serialization and cryptographic hash of a RDF
-graph.
+**WORK IN PROGRESS: Non-functional code.**
+
+This libray generates a canonical serialization of a RDF graph that is amenable
+to hashing.
 
 The logic is drawn from a `publication
 <http://ceur-ws.org/Vol-1259/method2014_submission_1.pdf>`_ by Edzard Höfig and
