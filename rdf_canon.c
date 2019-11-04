@@ -113,7 +113,7 @@ int CAN_canonicize(CAN_Context* ctx, CAN_Buffer* buf)
     cork_array_init(&subj_array);
     cork_array_set_done(&subj_array, &npair_array_done_f);
 
-    CAN_Buffer* subj_tmp_buf = cork_new(CAN_Buffer);
+    CAN_Buffer subj_tmp_buf;
 
     librdf_statement* q_stmt = librdf_new_statement(ctx->world);
     librdf_stream* stream = librdf_model_find_statements(ctx->model, q_stmt);
@@ -150,27 +150,26 @@ int CAN_canonicize(CAN_Context* ctx, CAN_Buffer* buf)
     librdf_free_stream(stream);
 
     // Serialize the subjects and, iteratively, the whole statements.
+    cork_buffer_init(&subj_tmp_buf);
     for (size_t i = 0; i < subj_array.size; i++){
         librdf_node* subject = cork_array_at(&subj_array, i)->node;
-        cork_buffer_init(subj_tmp_buf);
         /* Original subject that gets passed down the call stack. */
         ctx->orig_subj = subject;
 
-        encode_subject(ctx, subject, subj_tmp_buf);
+        encode_subject(ctx, subject, &subj_tmp_buf);
 
         printf("Canonicized subject: ");
-        fwrite(subj_tmp_buf->buf, 1, subj_tmp_buf->size, stdout);
+        fwrite(subj_tmp_buf.buf, 1, subj_tmp_buf.size, stdout);
         fputc('\n', stdout);
 
         cork_buffer_append(buf, CAN_S_START, 1);
-        cork_buffer_append_copy(buf, subj_tmp_buf);
+        cork_buffer_append_copy(buf, &subj_tmp_buf);
         cork_buffer_append(buf, CAN_S_END, 1);
 
     }
 
     // Free the source pointers first...
-    cork_buffer_done(subj_tmp_buf);
-    cork_free(subj_tmp_buf, sizeof(CAN_Buffer));
+    cork_buffer_done(&subj_tmp_buf);
     printf("Freed encoded subjects.\n");
 
     // ...then the ordered array.
@@ -189,6 +188,7 @@ static int encode_subject(
 {
     CAN_Buffer pred_buf;
 
+    // subj_buf gets cleared in any case.
     if (librdf_node_get_type(subject) == LIBRDF_NODE_TYPE_BLANK) {
         if (subj_array_contains(ctx->visited_nodes, subject)) {
             if (librdf_node_equals(subject, ctx->orig_subj)) {
@@ -361,7 +361,7 @@ static void npair_array_done_f(void* user_data, void* el)
             printf("Freeing buffer in NodePair @ %p: %s\n", np->s_node, (char*)np->s_node->buf);
             cork_buffer_free(np->s_node);
         }
-        //cork_delete(CAN_NodePair, np);
+        cork_delete(CAN_NodePair, np);
     }
 }
 
@@ -391,7 +391,7 @@ static inline CAN_NodePair* np_new_from_node(
  * Deduplication and sorting of the node is done based on the serialized node
  * string.
  *
- * The array items must be freed with `cork_delete(CAN_NodePair, <item>)`.
+ * The array items are automatically freed with `npair_array_done_f()`.
  */
 static inline int nparray_insert_ordered(
         const CAN_Context* ctx, CAN_NodePairArray* array, librdf_node* ins_item)
@@ -401,8 +401,6 @@ static inline int nparray_insert_ordered(
     if (array->size == 0) {
         printf("Inserting first element in array: %s.\n", (char*)new_np->s_node->buf);
         cork_array_append(array, new_np);
-        //printf("new_np: %p array np: %p\n", new_np, cork_array_at(array, 0));
-        //printf("new_np->s_node: %p array np->s_node: %p\n", new_np->s_node, cork_array_at(array, 0)->s_node);
         return(0);
     }
 
@@ -417,6 +415,9 @@ static inline int nparray_insert_ordered(
         if (comp == 0) {
             // Term is duplicate. Exit without inserting.
             printf("Duplicate term. Skipping.\n");
+            // Free duplicate node.
+            cork_buffer_free(new_np->s_node);
+            cork_delete(CAN_NodePair, new_np);
             return(0);
 
         } else if (comp < 0) {
@@ -442,6 +443,8 @@ static inline int nparray_insert_ordered(
             cork_array_append(array, new_np);
             return(0);
 
+        } else {
+            continue;
         }
         // If comp > 0 and not the end, continue until a greater or equal term
         // is found.
